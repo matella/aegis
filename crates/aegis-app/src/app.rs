@@ -2,6 +2,7 @@
 use crate::{poll, tray, views};
 use aegis_core::{Config, GpuState, NowPlaying, ServiceHealth};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// Données affichées par le Dashboard (alimentées par le poller).
@@ -28,8 +29,9 @@ pub struct AegisApp {
     pub up_tx: aegis_uploader::EventSender,
     pub watchers: Vec<aegis_uploader::watcher::WatcherHandle>,
     pub panel: Panel,
+    #[allow(dead_code)] // gardé vivant : drop = l'icône tray disparaît
     pub tray: tray::Tray,
-    pub really_quit: bool,
+    pub really_quit: Arc<AtomicBool>,
     // tampons d'édition (Settings)
     pub e_jarvis: String,
     pub e_jarvis_token: String,
@@ -71,6 +73,8 @@ impl AegisApp {
         let dash = Arc::new(Mutex::new(DashboardData::default()));
         poll::spawn_poller(rt.clone(), cfg_arc.clone(), dash.clone(), ctx.clone());
 
+        let really_quit = Arc::new(AtomicBool::new(false));
+
         Self {
             rt,
             cfg: cfg_arc,
@@ -79,8 +83,8 @@ impl AegisApp {
             up_tx: tx,
             watchers,
             panel: Panel::Dashboard,
-            tray: tray::Tray::new(&ctx),
-            really_quit: false,
+            tray: tray::Tray::new(&ctx, really_quit.clone()),
+            really_quit,
             e_jarvis: cfg.jarvis_url,
             e_jarvis_token: cfg.jarvis_token.unwrap_or_default(),
             e_storm: cfg.storm_codex_url,
@@ -168,21 +172,9 @@ fn boot_uploader(
 
 impl eframe::App for AegisApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Événements du tray.
-        if let Some(action) = self.tray.poll() {
-            match action {
-                tray::TrayAction::Show => {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-                }
-                tray::TrayAction::Quit => {
-                    self.really_quit = true;
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                }
-            }
-        }
+        // Le tray agit directement sur la fenêtre (handlers) — rien à poller ici.
         // Fermeture → masquer dans le tray (sauf Quit explicite) ; l'app continue de tourner.
-        if !self.really_quit && ctx.input(|i| i.viewport().close_requested()) {
+        if !self.really_quit.load(Ordering::SeqCst) && ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
         }
