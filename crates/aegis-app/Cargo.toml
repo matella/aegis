@@ -1,0 +1,19 @@
+[package]
+name = "aegis-app"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "aegis"
+path = "src/main.rs"
+
+[dependencies]
+aegis-core = { path = "../aegis-core" }
+aegis-client = { path = "../aegis-client" }
+aegis-uploader = { path = "../aegis-uploader" }
+eframe = { version = "0.31", features = ["persistence"] }
+egui = "0.31"
+tokio = { version = "1", features = ["full"] }
+tray-icon = "0.19"
+open = "5"
+serde_json.workspace = true
