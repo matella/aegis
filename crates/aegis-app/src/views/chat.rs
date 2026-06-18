@@ -26,7 +26,8 @@ pub fn ui(app: &mut AegisApp, ui: &mut egui::Ui) {
         if ui.selectable_label(app.listening, label).clicked() {
             app.listening = !app.listening;
             if app.listening {
-                app.listen_handle = audio::start_listening(app.chat_tx.clone());
+                let mic = app.cfg.lock().unwrap().mic_device.clone();
+                app.listen_handle = audio::start_listening(app.chat_tx.clone(), mic);
                 if app.listen_handle.is_none() {
                     app.listening = false; // pas de micro / format non géré
                 }

@@ -71,16 +71,26 @@ fn handle_frame(
 ) {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(text) else { return };
     match v.get("kind").and_then(|k| k.as_str()) {
-        // Voix : wake-word détecté → on écoute. La transcription arrive en message « you ».
+        // Voix : wake-word détecté → accusé « il t'a entendu » (chime aigu + phrase parlée).
         Some("wake") => {
             state.lock().unwrap().wake = true;
+            let reply = cfg.lock().unwrap().wake_reply.clone();
+            player.chime(880.0);
+            crate::audio::speak(&reply);
         }
+        // Fin de parole détectée par le serveur → transcription + accusé « il réfléchit » (chime
+        // grave + phrase). La vraie réponse suit dans `turn`.
         Some("transcript") => {
             if let Some(t) = v.get("text").and_then(|t| t.as_str()).filter(|t| !t.is_empty()) {
-                let mut s = state.lock().unwrap();
-                s.messages.push(ChatMsg { role: "you".into(), text: t.to_string(), links: Vec::new() });
-                s.thinking = true;
-                s.wake = false;
+                {
+                    let mut s = state.lock().unwrap();
+                    s.messages.push(ChatMsg { role: "you".into(), text: t.to_string(), links: Vec::new() });
+                    s.thinking = true;
+                    s.wake = false;
+                }
+                let reply = cfg.lock().unwrap().thinking_reply.clone();
+                player.chime(440.0);
+                crate::audio::speak(&reply);
             }
         }
         Some("tts") => {

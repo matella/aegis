@@ -81,14 +81,86 @@ impl Drop for ListenHandle {
     }
 }
 
-/// Démarre la capture micro en continu → frames 16 kHz vers `tx`. None si pas de micro/format géré.
-pub fn start_listening(tx: tokio::sync::mpsc::UnboundedSender<Outbound>) -> Option<ListenHandle> {
+/// Liste les micros disponibles (noms cpal). Vide si l'hôte ne répond pas.
+pub fn input_devices() -> Vec<String> {
+    cpal::default_host()
+        .input_devices()
+        .map(|it| it.filter_map(|d| d.name().ok()).collect())
+        .unwrap_or_default()
+}
+
+/// Liste les sorties audio disponibles (noms cpal).
+pub fn output_devices() -> Vec<String> {
+    cpal::default_host()
+        .output_devices()
+        .map(|it| it.filter_map(|d| d.name().ok()).collect())
+        .unwrap_or_default()
+}
+
+fn pick_input(host: &cpal::Host, name: &Option<String>) -> Option<cpal::Device> {
+    if let Some(n) = name.as_deref().filter(|n| !n.is_empty()) {
+        if let Ok(devs) = host.input_devices() {
+            for d in devs {
+                if d.name().ok().as_deref() == Some(n) {
+                    return Some(d);
+                }
+            }
+        }
+    }
+    host.default_input_device()
+}
+
+fn pick_output(host: &cpal::Host, name: &Option<String>) -> Option<cpal::Device> {
+    if let Some(n) = name.as_deref().filter(|n| !n.is_empty()) {
+        if let Ok(devs) = host.output_devices() {
+            for d in devs {
+                if d.name().ok().as_deref() == Some(n) {
+                    return Some(d);
+                }
+            }
+        }
+    }
+    host.default_output_device()
+}
+
+/// Parle une phrase courte via la synthèse vocale de l'OS (accusés voix). Best-effort, non bloquant.
+pub fn speak(phrase: &str) {
+    let phrase = phrase.trim();
+    if phrase.is_empty() {
+        return;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("say").arg(phrase).spawn();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let safe = phrase.replace('\'', " ");
+        let script = format!(
+            "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('{safe}')"
+        );
+        let _ = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", &script])
+            .spawn();
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = std::process::Command::new("spd-say").arg(phrase).spawn();
+    }
+}
+
+/// Démarre la capture micro en continu → frames 16 kHz vers `tx`. `mic` = nom du périphérique (None
+/// = défaut). None si pas de micro/format géré.
+pub fn start_listening(
+    tx: tokio::sync::mpsc::UnboundedSender<Outbound>,
+    mic: Option<String>,
+) -> Option<ListenHandle> {
     let stop = Arc::new(AtomicBool::new(false));
     let stop_thread = stop.clone();
     std::thread::spawn(move || {
         let host = cpal::default_host();
-        let Some(device) = host.default_input_device() else {
-            eprintln!("voice: aucun micro par défaut");
+        let Some(device) = pick_input(&host, &mic) else {
+            eprintln!("voice: aucun micro");
             return;
         };
         let Ok(supported) = device.default_input_config() else {
@@ -141,25 +213,45 @@ pub fn start_listening(tx: tokio::sync::mpsc::UnboundedSender<Outbound>) -> Opti
     Some(ListenHandle { stop })
 }
 
-/// Lecteur TTS : un thread possède le périphérique de sortie (rodio) et joue séquentiellement les
-/// wav reçus. Clonable (partage l'émetteur).
+enum Cmd {
+    Wav(Vec<u8>),
+    Chime(f32), // bip court (accusé wake/done) à la fréquence donnée
+}
+
+/// Lecteur audio : un thread possède le périphérique de sortie (rodio) et joue séquentiellement les
+/// wav (TTS) et chimes reçus. `output` = nom du périphérique (None = défaut). Clonable.
 #[derive(Clone)]
 pub struct Player {
-    tx: std::sync::mpsc::Sender<Vec<u8>>,
+    tx: std::sync::mpsc::Sender<Cmd>,
 }
 impl Player {
-    pub fn new() -> Player {
-        let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    pub fn new(output: Option<String>) -> Player {
+        let (tx, rx) = std::sync::mpsc::channel::<Cmd>();
         std::thread::spawn(move || {
-            let Ok((_stream, handle)) = rodio::OutputStream::try_default() else {
+            use rodio::Source;
+            let host = cpal::default_host();
+            let stream = pick_output(&host, &output)
+                .and_then(|d| rodio::OutputStream::try_from_device(&d).ok())
+                .or_else(|| rodio::OutputStream::try_default().ok());
+            let Some((_stream, handle)) = stream else {
                 eprintln!("voice: pas de sortie audio");
                 return;
             };
             // _stream doit rester vivant tant que le thread tourne (sinon plus de son).
-            while let Ok(wav) = rx.recv() {
-                if let Ok(sink) = rodio::Sink::try_new(&handle) {
-                    if let Ok(dec) = rodio::Decoder::new(std::io::Cursor::new(wav)) {
-                        sink.append(dec);
+            while let Ok(cmd) = rx.recv() {
+                let Ok(sink) = rodio::Sink::try_new(&handle) else { continue };
+                match cmd {
+                    Cmd::Wav(wav) => {
+                        if let Ok(dec) = rodio::Decoder::new(std::io::Cursor::new(wav)) {
+                            sink.append(dec);
+                            sink.sleep_until_end();
+                        }
+                    }
+                    Cmd::Chime(freq) => {
+                        let s = rodio::source::SineWave::new(freq)
+                            .take_duration(std::time::Duration::from_millis(140))
+                            .amplify(0.18);
+                        sink.append(s);
                         sink.sleep_until_end();
                     }
                 }
@@ -168,6 +260,9 @@ impl Player {
         Player { tx }
     }
     pub fn play(&self, wav: Vec<u8>) {
-        let _ = self.tx.send(wav);
+        let _ = self.tx.send(Cmd::Wav(wav));
+    }
+    pub fn chime(&self, freq: f32) {
+        let _ = self.tx.send(Cmd::Chime(freq));
     }
 }

@@ -43,6 +43,12 @@ pub struct AegisApp {
     pub e_storm: String,
     pub e_orpheus: String,
     pub e_upload_token: String,
+    pub e_mic: String,
+    pub e_output: String,
+    pub e_wake: String,
+    pub e_thinking: String,
+    pub mic_devices: Vec<String>,
+    pub out_devices: Vec<String>,
     pub save_msg: Option<(String, bool)>,
     // uploader : ajout de dossier
     pub new_dir: String,
@@ -80,8 +86,8 @@ impl AegisApp {
 
         let win = window::WindowCtl::new(ctx.clone());
 
-        // Chat Jarvis (WS /ws, reconnexion auto) + lecteur TTS pour la voix.
-        let player = audio::Player::new();
+        // Chat Jarvis (WS /ws, reconnexion auto) + lecteur audio (TTS + chimes) sur la sortie choisie.
+        let player = audio::Player::new(cfg.output_device.clone());
         let chat = Arc::new(Mutex::new(chat::ChatState::default()));
         let chat_tx = chat::spawn(
             &rt,
@@ -112,6 +118,12 @@ impl AegisApp {
             e_storm: cfg.storm_codex_url,
             e_orpheus: cfg.orpheus_url,
             e_upload_token: cfg.upload_token.unwrap_or_default(),
+            e_mic: cfg.mic_device.clone().unwrap_or_default(),
+            e_output: cfg.output_device.clone().unwrap_or_default(),
+            e_wake: cfg.wake_reply.clone(),
+            e_thinking: cfg.thinking_reply.clone(),
+            mic_devices: audio::input_devices(),
+            out_devices: audio::output_devices(),
             save_msg: None,
             new_dir: String::new(),
         }
@@ -126,6 +138,10 @@ impl AegisApp {
             storm_codex_url: self.e_storm.trim().to_string(),
             orpheus_url: self.e_orpheus.trim().to_string(),
             upload_token: opt(&self.e_upload_token),
+            mic_device: opt(&self.e_mic),
+            output_device: opt(&self.e_output),
+            wake_reply: self.e_wake.trim().to_string(),
+            thinking_reply: self.e_thinking.trim().to_string(),
         };
         let saved = cfg.save();
         {
@@ -135,8 +151,14 @@ impl AegisApp {
             s.server_connected = false;
         }
         *self.cfg.lock().unwrap() = cfg;
+        // Micro : si on écoute, redémarre la capture avec le périphérique choisi (effet immédiat).
+        // Sortie audio : appliquée au prochain lancement (le lecteur est créé au démarrage).
+        if self.listening {
+            let mic = self.cfg.lock().unwrap().mic_device.clone();
+            self.listen_handle = audio::start_listening(self.chat_tx.clone(), mic);
+        }
         self.save_msg = Some(match saved {
-            Ok(()) => ("Saved.".into(), true),
+            Ok(()) => ("Saved. (sortie audio : relance l'app pour l'appliquer)".into(), true),
             Err(e) => (format!("Save failed: {e}"), false),
         });
     }
