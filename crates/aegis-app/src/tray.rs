@@ -40,9 +40,16 @@ fn build(win: WindowCtl) -> Result<TrayIcon, Box<dyn std::error::Error>> {
         }
     }));
 
+    // Clic GAUCHE (relâché) sur l'icône → afficher. Le clic droit ouvre le menu (natif) et ne doit
+    // PAS restaurer la fenêtre.
     let w2 = win;
     TrayIconEvent::set_event_handler(Some(move |ev: TrayIconEvent| {
-        if let TrayIconEvent::Click { .. } = ev {
+        if let TrayIconEvent::Click {
+            button: tray_icon::MouseButton::Left,
+            button_state: tray_icon::MouseButtonState::Up,
+            ..
+        } = ev
+        {
             w2.show();
         }
     }));
