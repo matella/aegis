@@ -26,21 +26,28 @@ struct Resampler {
 impl Resampler {
     fn push_mono(&mut self, samples: &[f32]) {
         self.mono.extend_from_slice(samples);
-        // Ré-échantillonnage linéaire jusqu'à épuisement (en gardant 1 échantillon de marge).
-        while (self.pos as usize) + 1 < self.mono.len() {
-            let i = self.pos as usize;
-            let frac = self.pos - i as f32;
-            let v = self.mono[i] * (1.0 - frac) + self.mono[i + 1] * frac;
-            self.frame.push((v.clamp(-1.0, 1.0) * i16::MAX as f32) as i16);
+        // Décimation device→16 kHz avec MOYENNE DE FENÊTRE (filtre anti-repliement simple) : on
+        // moyenne les ~`ratio` échantillons couverts par chaque pas, au lieu d'en prendre un seul
+        // (qui produit de l'aliasing → audio distordu pour Whisper + bruit qui fausse la VAD RMS).
+        while self.pos + self.ratio <= self.mono.len() as f32 {
+            let start = self.pos as usize;
+            let mut end = (self.pos + self.ratio) as usize;
+            if end <= start {
+                end = start + 1;
+            }
+            let end = end.min(self.mono.len());
+            let win = &self.mono[start..end];
+            let avg = win.iter().copied().sum::<f32>() / win.len() as f32;
+            self.frame.push((avg.clamp(-1.0, 1.0) * i16::MAX as f32) as i16);
             self.pos += self.ratio;
             if self.frame.len() >= FRAME_SAMPLES {
                 self.flush();
             }
         }
-        // Conserve la queue non consommée + recale `pos`.
-        let consumed = self.pos as usize;
+        // Conserve la queue non consommée + recale `pos` (continuité entre callbacks).
+        let consumed = (self.pos as usize).min(self.mono.len());
         if consumed > 0 {
-            self.mono.drain(0..consumed.min(self.mono.len()));
+            self.mono.drain(0..consumed);
             self.pos -= consumed as f32;
         }
     }
