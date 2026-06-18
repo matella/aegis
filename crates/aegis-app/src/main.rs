@@ -4,6 +4,7 @@ mod app;
 mod audio;
 mod chat;
 mod poll;
+mod theme;
 mod tray;
 mod views;
 mod window;
@@ -22,7 +23,8 @@ fn main() {
         viewport: egui::ViewportBuilder::default()
             .with_title("Aegis")
             .with_inner_size([920.0, 600.0])
-            .with_min_inner_size([720.0, 460.0]),
+            .with_min_inner_size([720.0, 460.0])
+            .with_icon(theme::app_icon()),
         ..Default::default()
     };
 
