@@ -1,0 +1,15 @@
+[package]
+name = "aegis-uploader"
+version = "0.1.0"
+edition = "2021"
+
+# Copié de Hots-Overlay/client-rs (watcher/detector/uploader), découplé de l'UI : le repaint passe
+# par un callback générique (pas d'egui), serveur/token fournis par l'app (pas de build-time).
+[dependencies]
+notify = "8"
+ureq = "3"
+tokio = { version = "1", features = ["full"] }
+serde.workspace = true
+serde_json.workspace = true
+dirs = "6"
+chrono = { version = "0.4", features = ["serde"] }

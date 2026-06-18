@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["crates/aegis-core", "crates/aegis-client"]
-# crates ajoutées au fur et à mesure du plan : aegis-uploader, aegis-app
+members = ["crates/aegis-core", "crates/aegis-client", "crates/aegis-uploader"]
+# crates ajoutées au fur et à mesure du plan : aegis-app
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
