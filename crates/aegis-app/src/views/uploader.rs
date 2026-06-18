@@ -1,12 +1,11 @@
 //! Vue Uploader : statut du watcher + dossiers de replays + uploads récents. Wrappe aegis-uploader.
 use crate::app::AegisApp;
-use crate::views::{DIM, GREEN, RED};
+use crate::kit;
+use crate::theme::{DIM, TEXT};
+use crate::views::{GREEN, RED};
 use aegis_uploader::WatcherStatus;
 
 pub fn ui(app: &mut AegisApp, ui: &mut egui::Ui) {
-    ui.heading("Replay uploader");
-    ui.add_space(6.0);
-
     let (status, count, connected, recent) = {
         let s = app.up_state.lock().unwrap();
         (
@@ -21,80 +20,108 @@ pub fn ui(app: &mut AegisApp, ui: &mut egui::Ui) {
         )
     };
 
+    // En-tête : titre + badge d'état du watcher à droite (façon mockup).
     ui.horizontal(|ui| {
-        let (c, t) = match &status {
-            WatcherStatus::Watching => (GREEN, "watching"),
-            WatcherStatus::Stopped => (DIM, "stopped"),
-            WatcherStatus::Error(_) => (RED, "error"),
-        };
-        ui.colored_label(c, "●");
-        ui.label(t);
+        super::page_title(ui, "Replay uploader");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.label(
-                egui::RichText::new(if connected { "server: connected" } else { "server: offline" })
-                    .small()
-                    .color(DIM),
-            );
+            let (c, t) = match &status {
+                WatcherStatus::Watching => (GREEN, "watching"),
+                WatcherStatus::Stopped => (DIM, "stopped"),
+                WatcherStatus::Error(_) => (RED, "error"),
+            };
+            kit::led(ui, c);
+            kit::badge(ui, t, c);
         });
     });
-    ui.label(format!("Uploaded: {count}"));
+    ui.add_space(12.0);
 
-    ui.separator();
-    ui.label(egui::RichText::new("REPLAY FOLDERS").small().color(DIM));
-    let dirs = { app.up_state.lock().unwrap().replay_dirs.clone() };
-    let mut to_remove = None;
-    for (i, d) in dirs.iter().enumerate() {
-        ui.horizontal(|ui| {
-            ui.monospace(d);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("✕").clicked() {
-                    to_remove = Some(i);
-                }
-            });
-        });
-    }
-    if dirs.is_empty() {
-        ui.label(egui::RichText::new("no folders — add your Heroes of the Storm/Accounts path").color(DIM));
-    }
-    ui.horizontal(|ui| {
-        ui.text_edit_singleline(&mut app.new_dir);
-        let add = ui.button("Add").clicked() && !app.new_dir.trim().is_empty();
-        let detect = ui.button("Auto-detect").clicked();
-        if add {
-            let mut next = dirs.clone();
-            next.push(app.new_dir.trim().to_string());
-            app.new_dir.clear();
-            commit_dirs(app, next);
-        } else if detect {
-            let mut next = dirs.clone();
-            for p in aegis_uploader::detector::detect_replay_dirs() {
-                let s = p.to_string_lossy().to_string();
-                if !next.contains(&s) {
-                    next.push(s);
-                }
+    // Carte de stats : lignes label/valeur étalées.
+    kit::card(ui, |ui| {
+        spread(ui, "Server", if connected { "connected" } else { "offline" }, if connected { GREEN } else { DIM });
+        ui.add_space(6.0);
+        spread(ui, "Uploaded", &count.to_string(), TEXT);
+    });
+
+    ui.add_space(12.0);
+
+    kit::card_titled(ui, "Replay folders", |ui| {
+        let dirs = { app.up_state.lock().unwrap().replay_dirs.clone() };
+        let mut to_remove = None;
+        if dirs.is_empty() {
+            kit::dim(ui, "no folders — add your Heroes of the Storm/Accounts path");
+        }
+        for (i, d) in dirs.iter().enumerate() {
+            if i > 0 {
+                kit::hairline(ui);
             }
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(d).monospace().color(TEXT).size(11.0));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.small_button("✖").clicked() {
+                        to_remove = Some(i);
+                    }
+                });
+            });
+        }
+
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            ui.add(egui::TextEdit::singleline(&mut app.new_dir).hint_text("path to replay folder…"));
+            let add = ui.button("Add").clicked() && !app.new_dir.trim().is_empty();
+            let detect = ui.button("Auto-detect").clicked();
+            if add {
+                let mut next = dirs.clone();
+                next.push(app.new_dir.trim().to_string());
+                app.new_dir.clear();
+                commit_dirs(app, next);
+            } else if detect {
+                let mut next = dirs.clone();
+                for p in aegis_uploader::detector::detect_replay_dirs() {
+                    let s = p.to_string_lossy().to_string();
+                    if !next.contains(&s) {
+                        next.push(s);
+                    }
+                }
+                commit_dirs(app, next);
+            }
+        });
+        if let Some(i) = to_remove {
+            let mut next = dirs.clone();
+            next.remove(i);
             commit_dirs(app, next);
         }
     });
-    if let Some(i) = to_remove {
-        let mut next = dirs.clone();
-        next.remove(i);
-        commit_dirs(app, next);
-    }
 
-    ui.separator();
-    ui.label(egui::RichText::new("RECENT").small().color(DIM));
-    if recent.is_empty() {
-        ui.label(egui::RichText::new("none yet").color(DIM));
-    }
-    for (f, st) in recent {
-        ui.horizontal(|ui| {
-            ui.monospace(f);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(egui::RichText::new(st).small().color(DIM));
+    ui.add_space(14.0);
+    kit::cap(ui, "Recent");
+    ui.add_space(6.0);
+    kit::card(ui, |ui| {
+        if recent.is_empty() {
+            kit::dim(ui, "none yet");
+        }
+        for (i, (f, st)) in recent.iter().enumerate() {
+            if i > 0 {
+                kit::hairline(ui);
+            }
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(f).monospace().color(TEXT).size(11.0));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let ok = st.eq_ignore_ascii_case("uploaded") || st.eq_ignore_ascii_case("ok");
+                    kit::badge(ui, &st.to_lowercase(), if ok { GREEN } else { DIM });
+                });
             });
+        }
+    });
+}
+
+/// Ligne « label sourd à gauche · valeur à droite » (lignes de la carte de stats).
+fn spread(ui: &mut egui::Ui, label: &str, value: &str, value_color: egui::Color32) {
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(label).color(DIM));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(kit::mono(value, value_color));
         });
-    }
+    });
 }
 
 fn commit_dirs(app: &mut AegisApp, dirs: Vec<String>) {

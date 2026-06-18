@@ -2,13 +2,22 @@
 //! cartes, sélection. Toutes les vues en héritent.
 use egui::{Color32, Stroke};
 
+// Tokens du mockup (docs/aegis-mockup.html).
 pub const ACCENT: Color32 = Color32::from_rgb(0x7e, 0x97, 0xff);
 pub const BG: Color32 = Color32::from_rgb(0x0d, 0x0f, 0x12);
+/// Surface très sombre : sidebar + titlebar du mockup (#0a0c0f).
+pub const SIDE: Color32 = Color32::from_rgb(0x0a, 0x0c, 0x0f);
 pub const PANEL: Color32 = Color32::from_rgb(0x15, 0x18, 0x1d);
 pub const PANEL2: Color32 = Color32::from_rgb(0x1b, 0x1f, 0x25);
 pub const TEXT: Color32 = Color32::from_rgb(0xe6, 0xe9, 0xee);
 pub const DIM: Color32 = Color32::from_rgb(0x8b, 0x94, 0xa2);
 pub const LINE: Color32 = Color32::from_rgb(0x27, 0x2c, 0x34);
+pub const LINE2: Color32 = Color32::from_rgb(0x33, 0x3a, 0x44);
+pub const GREEN: Color32 = Color32::from_rgb(0x3f, 0xb9, 0x50);
+pub const RED: Color32 = Color32::from_rgb(0xf8, 0x51, 0x49);
+/// Amber : actions destructives « confirmation requise » du chat (mockup #2/#4).
+#[allow(dead_code)]
+pub const AMBER: Color32 = Color32::from_rgb(0xd2, 0x99, 0x22);
 
 pub fn apply(ctx: &egui::Context) {
     let mut style = egui::Style::default();

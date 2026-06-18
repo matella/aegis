@@ -20,9 +20,18 @@ impl WindowCtl {
     }
 
     /// Enregistre le handle natif de la fenêtre (capté au 1er frame depuis `eframe::Frame`).
+    /// À la première capture, applique la barre de titre sombre.
     #[allow(dead_code)] // appelé uniquement sur Windows
     pub fn set_hwnd(&self, h: isize) {
-        *self.hwnd.lock().unwrap() = Some(h);
+        let newly = {
+            let mut g = self.hwnd.lock().unwrap();
+            let was_none = g.is_none();
+            *g = Some(h);
+            was_none
+        };
+        if newly {
+            self.dark_titlebar();
+        }
     }
 
     pub fn hide(&self) {
@@ -57,6 +66,36 @@ impl WindowCtl {
         if let Some(w) = self.hwnd() {
             unsafe {
                 let _ = ShowWindow(w, SW_HIDE);
+            }
+        }
+    }
+
+    /// Force une barre de titre sombre (Win11) : mode immersif foncé + couleur de caption = fond Aegis,
+    /// au lieu de la couleur d'accent système (barre magenta par défaut). Idempotent.
+    #[allow(dead_code)] // appelé uniquement sur Windows
+    pub fn dark_titlebar(&self) {
+        #[cfg(windows)]
+        if let Some(w) = self.hwnd() {
+            use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWINDOWATTRIBUTE};
+            // Valeurs non exposées par le crate windows à cet index → constantes brutes.
+            const DWMWA_USE_IMMERSIVE_DARK_MODE: DWMWINDOWATTRIBUTE = DWMWINDOWATTRIBUTE(20);
+            const DWMWA_CAPTION_COLOR: DWMWINDOWATTRIBUTE = DWMWINDOWATTRIBUTE(35);
+            // COLORREF = 0x00BBGGRR ; fond Aegis #0d0f12.
+            let caption: u32 = 0x0012_0f0d;
+            let dark: i32 = 1;
+            unsafe {
+                let _ = DwmSetWindowAttribute(
+                    w,
+                    DWMWA_USE_IMMERSIVE_DARK_MODE,
+                    &dark as *const _ as *const core::ffi::c_void,
+                    std::mem::size_of::<i32>() as u32,
+                );
+                let _ = DwmSetWindowAttribute(
+                    w,
+                    DWMWA_CAPTION_COLOR,
+                    &caption as *const _ as *const core::ffi::c_void,
+                    std::mem::size_of::<u32>() as u32,
+                );
             }
         }
     }

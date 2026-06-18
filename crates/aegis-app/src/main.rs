@@ -3,6 +3,7 @@
 mod app;
 mod audio;
 mod chat;
+mod kit;
 mod poll;
 mod theme;
 mod tray;

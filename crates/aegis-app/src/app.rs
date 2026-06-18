@@ -1,5 +1,5 @@
 //! AegisApp : état partagé + boucle egui. Logique métier dans aegis-core/client ; ici, du câblage.
-use crate::{audio, chat, poll, tray, views, window};
+use crate::{audio, chat, poll, theme, tray, views, window};
 use aegis_core::{Config, GpuState, NowPlaying, ServiceHealth};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -240,29 +240,56 @@ impl eframe::App for AegisApp {
             self.win.hide();
         }
 
-        egui::SidePanel::left("nav").exact_width(168.0).show(ctx, |ui| {
-            ui.add_space(8.0);
-            ui.heading("Aegis");
-            ui.add_space(10.0);
-            let mut nav = |ui: &mut egui::Ui, p: Panel, label: &str| {
-                if ui.selectable_label(self.panel == p, label).clicked() {
-                    self.panel = p;
-                }
-            };
-            nav(ui, Panel::Dashboard, "▦  Dashboard");
-            nav(ui, Panel::Jarvis, "✦  Jarvis");
-            nav(ui, Panel::Uploader, "⇪  Uploader");
-            ui.add_space(6.0);
-            ui.separator();
-            ui.add_space(6.0);
-            nav(ui, Panel::Settings, "⚙  Settings");
-        });
+        egui::SidePanel::left("nav")
+            .exact_width(172.0)
+            .frame(
+                egui::Frame::new()
+                    .fill(theme::SIDE)
+                    .stroke(egui::Stroke::new(1.0, theme::LINE))
+                    .inner_margin(egui::Margin::symmetric(8, 12)),
+            )
+            .show(ctx, |ui| {
+                ui.add_space(2.0);
+                ui.label(egui::RichText::new("Aegis").size(15.0).strong().color(theme::ACCENT));
+                ui.add_space(14.0);
 
-        egui::CentralPanel::default().show(ctx, |ui| match self.panel {
-            Panel::Dashboard => views::dashboard::ui(self, ui),
-            Panel::Jarvis => views::chat::ui(self, ui),
-            Panel::Uploader => views::uploader::ui(self, ui),
-            Panel::Settings => views::settings::ui(self, ui),
-        });
+                let mut nav = |ui: &mut egui::Ui, p: Panel, label: &str| {
+                    if ui
+                        .add_sized([ui.available_width(), 30.0], egui::SelectableLabel::new(self.panel == p, label))
+                        .clicked()
+                    {
+                        self.panel = p;
+                    }
+                };
+                // Icônes = glyphes emoji (seuls rendus par la police egui ; ▦/⇪/✦ → tofu).
+                nav(ui, Panel::Dashboard, "📊   Dashboard");
+                nav(ui, Panel::Uploader, "📤   Uploader");
+                nav(ui, Panel::Jarvis, "✨   Jarvis");
+                ui.add_space(8.0);
+                nav(ui, Panel::Settings, "⚙   Settings");
+
+                // Pied : état de connexion Jarvis.
+                ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                    let connected = self.chat.lock().unwrap().connected;
+                    let (c, t) = if connected {
+                        (theme::GREEN, "jarvis online")
+                    } else {
+                        (theme::RED, "jarvis offline")
+                    };
+                    ui.horizontal(|ui| {
+                        crate::kit::led(ui, c);
+                        ui.label(egui::RichText::new(t).size(10.0).color(theme::DIM));
+                    });
+                });
+            });
+
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(theme::BG).inner_margin(egui::Margin::same(18)))
+            .show(ctx, |ui| match self.panel {
+                Panel::Dashboard => views::dashboard::ui(self, ui),
+                Panel::Jarvis => views::chat::ui(self, ui),
+                Panel::Uploader => views::uploader::ui(self, ui),
+                Panel::Settings => views::settings::ui(self, ui),
+            });
     }
 }

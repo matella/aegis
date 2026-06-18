@@ -1,94 +1,155 @@
 //! Vue Dashboard : santé des services + GPU/modèles + now-playing + actions rapides. Lit DashboardData
 //! (alimenté par le poller) ; ne fait aucun fetch (sauf actions ponctuelles : Free GPU, ouvrir URL).
 use crate::app::AegisApp;
-use crate::views::{DIM, GREEN, RED};
+use crate::kit;
+use crate::theme::{ACCENT, DIM, TEXT};
+use crate::views::{GREEN, RED};
 use aegis_client::http::HttpClients;
 use aegis_client::GpuClient;
 use aegis_core::{GpuState, ServiceStatus};
 
 pub fn ui(app: &mut AegisApp, ui: &mut egui::Ui) {
-    ui.heading("Overview");
-    ui.label(egui::RichText::new("auto-refresh 5 s").small().color(DIM));
-    ui.add_space(8.0);
+    super::header(ui, "Overview", "auto-refresh 5s");
 
     let d = app.dash.lock().unwrap();
 
-    egui::Frame::group(ui.style()).show(ui, |ui| {
-        ui.label(egui::RichText::new("SERVICES").small().color(DIM));
-        if d.health.is_empty() {
-            ui.label(egui::RichText::new("probing…").color(DIM));
+    // Grille 2×2 du mockup : Services | GPU, puis Now playing | Quick actions.
+    ui.columns(2, |c| {
+        services_card(&mut c[0], &d.health);
+        gpu_card(&mut c[1], app, &d);
+    });
+    ui.add_space(12.0);
+    let now = d.now.clone();
+    drop(d);
+    let cfg = app.cfg.lock().unwrap().clone();
+    ui.columns(2, |c| {
+        now_playing_card(&mut c[0], &now);
+        quick_actions_card(&mut c[1], &cfg);
+    });
+}
+
+fn services_card(ui: &mut egui::Ui, health: &[aegis_core::ServiceHealth]) {
+    kit::card_titled(ui, "Services", |ui| {
+        if health.is_empty() {
+            kit::dim(ui, "probing…");
         }
-        for h in &d.health {
+        for h in health {
             ui.horizontal(|ui| {
                 let (col, txt) = match h.status {
                     ServiceStatus::Up => (GREEN, format!("{} ms", h.latency_ms.unwrap_or(0))),
                     ServiceStatus::Down => (RED, "offline".to_string()),
                     ServiceStatus::Unknown => (DIM, "…".to_string()),
                 };
-                ui.colored_label(col, "●");
-                ui.label(&h.name);
+                kit::led(ui, col);
+                ui.label(egui::RichText::new(&h.name).color(TEXT));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(egui::RichText::new(txt).small().color(DIM));
+                    ui.label(kit::mono(txt, if h.status == ServiceStatus::Down { RED } else { DIM }));
                 });
             });
+            ui.add_space(5.0);
         }
     });
+}
 
-    egui::Frame::group(ui.style()).show(ui, |ui| {
-        ui.label(egui::RichText::new("GPU / MODELS").small().color(DIM));
+fn gpu_card(ui: &mut egui::Ui, app: &AegisApp, d: &crate::app::DashboardData) {
+    kit::card(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("GPU · RTX 2080 Super").size(13.0).strong().color(TEXT));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if let Some(g) = &d.gpu {
+                    kit::badge(
+                        ui,
+                        &format!("{:.1} / {:.0} GB", g.vram_held_gib, GpuState::RTX_2080S_TOTAL_GIB),
+                        DIM,
+                    );
+                }
+            });
+        });
+        ui.add_space(8.0);
+
         if let Some(g) = &d.gpu {
-            ui.add(
-                egui::ProgressBar::new(g.used_fraction(GpuState::RTX_2080S_TOTAL_GIB)).text(format!(
-                    "{:.1} / {:.0} GiB",
-                    g.vram_held_gib,
-                    GpuState::RTX_2080S_TOTAL_GIB
-                )),
-            );
+            let frac = g.used_fraction(GpuState::RTX_2080S_TOTAL_GIB) as f32;
+            kit::gauge(ui, frac, if frac > 0.85 { RED } else { ACCENT });
+            ui.add_space(8.0);
             if g.resident.is_empty() {
-                ui.label(egui::RichText::new("no model resident").color(DIM));
+                kit::dim(ui, "no model resident");
             }
             for m in &g.resident {
-                ui.colored_label(GREEN, format!("● {}  ({:.1} GiB, {})", m.model, m.vram_gib, m.processor));
+                ui.horizontal(|ui| {
+                    kit::led(ui, GREEN);
+                    ui.label(egui::RichText::new(&m.model).color(TEXT));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(kit::mono(format!("{:.1} GiB · {}", m.vram_gib, m.processor), DIM));
+                    });
+                });
+                ui.add_space(3.0);
             }
         } else if let Some(e) = &d.gpu_error {
-            ui.label(egui::RichText::new(format!("unavailable: {e}")).color(DIM));
+            kit::dim(ui, &format!("unavailable: {e}"));
         } else {
-            ui.label(egui::RichText::new("…").color(DIM));
+            kit::dim(ui, "…");
         }
-        if ui.button("Free GPU").clicked() {
-            let (rt, cfg) = (app.rt.clone(), app.cfg.lock().unwrap().clone());
-            rt.spawn(async move {
-                let _ = HttpClients::new(&cfg).free().await;
+
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            if ui.button("Free GPU").clicked() {
+                let (rt, cfg) = (app.rt.clone(), app.cfg.lock().unwrap().clone());
+                rt.spawn(async move {
+                    let _ = HttpClients::new(&cfg).free().await;
+                });
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let n = d.gpu.as_ref().map(|g| g.resident.len()).unwrap_or(0);
+                ui.label(egui::RichText::new(format!("{n} model resident")).size(11.0).color(DIM));
             });
-        }
+        });
     });
+}
 
-    egui::Frame::group(ui.style()).show(ui, |ui| {
-        ui.label(egui::RichText::new("NOW PLAYING").small().color(DIM));
-        if d.now.playing {
-            ui.label(format!(
-                "♪ {} — {}",
-                d.now.title.clone().unwrap_or_default(),
-                d.now.artist.clone().unwrap_or_default()
-            ));
+fn now_playing_card(ui: &mut egui::Ui, now: &aegis_core::NowPlaying) {
+    kit::card_titled(ui, "Now playing", |ui| {
+        if now.playing {
+            ui.horizontal(|ui| {
+                // Pochette : carré dégradé (approx) façon mockup.
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(46.0, 46.0), egui::Sense::hover());
+                ui.painter().rect_filled(
+                    rect,
+                    egui::CornerRadius::same(6),
+                    egui::Color32::from_rgb(0x47, 0x3a, 0x6b),
+                );
+                ui.add_space(4.0);
+                ui.vertical(|ui| {
+                    ui.label(
+                        egui::RichText::new(now.title.clone().unwrap_or_default()).strong().color(TEXT),
+                    );
+                    ui.label(egui::RichText::new(now.artist.clone().unwrap_or_default()).size(12.0).color(DIM));
+                });
+            });
         } else {
-            ui.label(egui::RichText::new("nothing playing").color(DIM));
+            kit::dim(ui, "nothing playing");
         }
     });
+}
 
-    drop(d);
-
-    ui.add_space(6.0);
-    ui.horizontal(|ui| {
-        let cfg = app.cfg.lock().unwrap().clone();
-        if ui.button("Open storm-codex ↗").clicked() {
-            let _ = open::that(&cfg.storm_codex_url);
-        }
-        if ui.button("Jarvis console ↗").clicked() {
-            let _ = open::that(&cfg.jarvis_url);
-        }
-        if ui.button("Patch notes ↗").clicked() {
-            let _ = open::that(format!("{}/patches", cfg.storm_codex_url.trim_end_matches('/')));
-        }
+fn quick_actions_card(ui: &mut egui::Ui, cfg: &aegis_core::Config) {
+    kit::card_titled(ui, "Quick actions", |ui| {
+        ui.horizontal_wrapped(|ui| {
+            if kit::btn_accent(ui, "Open storm-codex ↗").clicked() {
+                let _ = open::that(&cfg.storm_codex_url);
+            }
+            if ui.button("Jarvis console ↗").clicked() {
+                let _ = open::that(&cfg.jarvis_url);
+            }
+            if ui.button("Patch notes ↗").clicked() {
+                let _ = open::that(format!("{}/patches", cfg.storm_codex_url.trim_end_matches('/')));
+            }
+        });
+        ui.add_space(8.0);
+        ui.label(
+            egui::RichText::new("Ouvre les UIs web dans le navigateur (egui = pas d'embarquage).")
+                .size(11.0)
+                .color(DIM),
+        );
     });
 }
