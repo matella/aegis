@@ -1,0 +1,11 @@
+{
+  "isPlaying": true,
+  "progressMs": 1482,
+  "device": { "name": "MH-HOME", "type": "Computer" },
+  "track": {
+    "id": "6KOEK6SeCEZOQkLj5M1PxH",
+    "name": "California Gurls",
+    "artists": [{ "name": "Katy Perry" }, { "name": "Snoop Dogg" }],
+    "album": { "name": "Teenage Dream" }
+  }
+}

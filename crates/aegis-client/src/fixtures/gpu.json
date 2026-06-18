@@ -1,0 +1,14 @@
+{
+  "reachable": true,
+  "resident": [
+    {
+      "model": "qwen3.5:9b-instruct-q4_K_M",
+      "vram_gib": 6.6,
+      "size_gib": 6.6,
+      "processor": "GPU",
+      "expires_in_s": 287
+    }
+  ],
+  "model_count": 1,
+  "vram_held_gib": 6.6
+}

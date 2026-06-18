@@ -41,29 +41,37 @@ impl ServiceHealth {
     }
 }
 
+/// Un modèle résident en VRAM (forme de Jarvis `/api/gpu` → `gpu.gpu_status()`).
 #[derive(Debug, Clone, Default)]
 pub struct ResidentModel {
-    pub name: String,
-    pub resident: bool,
-    pub size_mb: u64,
+    pub model: String,
+    pub vram_gib: f32,
+    pub size_gib: f32,
+    pub processor: String, // "GPU" | "GPU+CPU" | "CPU"
+    pub expires_in_s: Option<u32>,
 }
 
+/// Occupation GPU telle que rapportée par la gateway Jarvis. Pas de VRAM totale (Ollama `/api/ps`
+/// ne l'expose pas) ; le total matériel est une constante côté UI (RTX 2080 Super = 8 GiB).
 #[derive(Debug, Clone, Default)]
 pub struct GpuState {
-    pub models: Vec<ResidentModel>,
-    pub used_mb: u64,
-    pub total_mb: u64,
+    pub reachable: bool,
+    pub resident: Vec<ResidentModel>,
+    pub vram_held_gib: f32,
 }
 
 impl GpuState {
-    pub fn resident_count(&self) -> usize {
-        self.models.iter().filter(|m| m.resident).count()
+    pub const RTX_2080S_TOTAL_GIB: f32 = 8.0;
+
+    pub fn model_count(&self) -> usize {
+        self.resident.len()
     }
-    pub fn used_fraction(&self) -> f32 {
-        if self.total_mb == 0 {
+    /// Fraction de VRAM occupée sur un total donné (borne [0,1]).
+    pub fn used_fraction(&self, total_gib: f32) -> f32 {
+        if total_gib <= 0.0 {
             0.0
         } else {
-            self.used_mb as f32 / self.total_mb as f32
+            (self.vram_held_gib / total_gib).clamp(0.0, 1.0)
         }
     }
 }
@@ -94,16 +102,26 @@ mod tests {
     }
 
     #[test]
-    fn gpu_summary_counts_resident() {
+    fn gpu_summary_counts_and_fraction() {
         let g = GpuState {
-            models: vec![
-                ResidentModel { name: "qwen".into(), resident: true, size_mb: 6600 },
-                ResidentModel { name: "coder".into(), resident: false, size_mb: 0 },
-            ],
-            used_mb: 5800,
-            total_mb: 8000,
+            reachable: true,
+            resident: vec![ResidentModel {
+                model: "qwen3.5:9b".into(),
+                vram_gib: 6.0,
+                size_gib: 6.0,
+                processor: "GPU".into(),
+                expires_in_s: Some(287),
+            }],
+            vram_held_gib: 6.0,
         };
-        assert_eq!(g.resident_count(), 1);
-        assert!((g.used_fraction() - 0.725).abs() < 0.01);
+        assert_eq!(g.model_count(), 1);
+        assert!((g.used_fraction(8.0) - 0.75).abs() < 0.01);
+    }
+
+    #[test]
+    fn gpu_fraction_clamps_and_handles_zero_total() {
+        let g = GpuState { reachable: true, resident: vec![], vram_held_gib: 9.0 };
+        assert_eq!(g.used_fraction(8.0), 1.0); // clamp
+        assert_eq!(g.used_fraction(0.0), 0.0); // pas de division par zéro
     }
 }

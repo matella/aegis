@@ -1,4 +1,4 @@
-//! Config : endpoints + token, persistés en local. Couche env > settings.json > défaut (même
+//! Config : endpoints + tokens, persistés en local. Couche env > settings.json > défaut (même
 //! philosophie que l'uploader client-rs). Rien n'est gravé dans le binaire.
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -8,6 +8,8 @@ use std::path::PathBuf;
 pub struct ConfigFile {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jarvis_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jarvis_token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storm_codex_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -19,6 +21,7 @@ pub struct ConfigFile {
 #[derive(Debug, Clone)]
 pub struct Config {
     pub jarvis_url: String,
+    pub jarvis_token: Option<String>,
     pub storm_codex_url: String,
     pub orpheus_url: String,
     pub upload_token: Option<String>,
@@ -38,14 +41,15 @@ impl Config {
                 .filter(|s| !s.trim().is_empty())
                 .unwrap_or_else(|| default.to_string())
         };
-        let upload_token = env("AEGIS_UPLOAD_TOKEN")
-            .or(file.upload_token)
-            .filter(|s| !s.trim().is_empty());
+        let opt = |envk: &str, f: Option<String>| {
+            env(envk).or(f).filter(|s| !s.trim().is_empty())
+        };
         Config {
             jarvis_url: pick("AEGIS_JARVIS_URL", file.jarvis_url, Self::DEFAULT_JARVIS),
+            jarvis_token: opt("AEGIS_JARVIS_TOKEN", file.jarvis_token),
             storm_codex_url: pick("AEGIS_STORM_URL", file.storm_codex_url, Self::DEFAULT_STORM),
             orpheus_url: pick("AEGIS_ORPHEUS_URL", file.orpheus_url, Self::DEFAULT_ORPHEUS),
-            upload_token,
+            upload_token: opt("AEGIS_UPLOAD_TOKEN", file.upload_token),
         }
     }
 
@@ -72,6 +76,7 @@ impl Config {
         };
         let f = ConfigFile {
             jarvis_url: trim(&self.jarvis_url),
+            jarvis_token: self.jarvis_token.clone().filter(|s| !s.trim().is_empty()),
             storm_codex_url: trim(&self.storm_codex_url),
             orpheus_url: trim(&self.orpheus_url),
             upload_token: self.upload_token.clone().filter(|s| !s.trim().is_empty()),
@@ -89,6 +94,7 @@ mod tests {
     fn layering_prefers_env_then_file_then_default() {
         let file = ConfigFile {
             jarvis_url: None,
+            jarvis_token: None,
             storm_codex_url: Some("http://file:5102".into()),
             orpheus_url: None,
             upload_token: Some("tok".into()),
@@ -107,12 +113,14 @@ mod tests {
     fn empty_strings_are_unset() {
         let file = ConfigFile {
             jarvis_url: Some("".into()),
+            jarvis_token: Some("".into()),
             storm_codex_url: None,
             orpheus_url: None,
             upload_token: Some("".into()),
         };
         let c = Config::resolve(file, |_| None);
         assert_eq!(c.jarvis_url, Config::DEFAULT_JARVIS);
+        assert_eq!(c.jarvis_token, None);
         assert_eq!(c.upload_token, None);
     }
 }

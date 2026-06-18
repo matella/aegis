@@ -1,0 +1,106 @@
+//! Parseurs PURS des réponses du box → types aegis-core. Tolérants (champs manquants) et testés sur
+//! des fixtures capturées en réel. C'est le point de régression n°1 → verrouillé par les tests.
+use aegis_core::{GpuState, NowPlaying, ResidentModel};
+use serde_json::Value;
+
+/// `/api/gpu` de la gateway Jarvis → `GpuState`. Forme :
+/// `{reachable, resident:[{model,vram_gib,size_gib,processor,expires_in_s}], model_count, vram_held_gib}`.
+pub fn parse_gpu(body: &str) -> Result<GpuState, String> {
+    let v: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+    let f = |x: Option<&Value>| x.and_then(Value::as_f64).unwrap_or(0.0) as f32;
+    let resident = v
+        .get("resident")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .map(|m| ResidentModel {
+                    model: m.get("model").and_then(Value::as_str).unwrap_or("?").to_string(),
+                    vram_gib: f(m.get("vram_gib")),
+                    size_gib: f(m.get("size_gib")),
+                    processor: m.get("processor").and_then(Value::as_str).unwrap_or("GPU").to_string(),
+                    expires_in_s: m.get("expires_in_s").and_then(Value::as_u64).map(|n| n as u32),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(GpuState {
+        reachable: v.get("reachable").and_then(Value::as_bool).unwrap_or(true),
+        vram_held_gib: f(v.get("vram_held_gib")),
+        resident,
+    })
+}
+
+/// Lecture en cours → `NowPlaying`. Tolère les DEUX formes :
+///  - Orpheus brut : `{isPlaying, track:{name, artists:[{name}]}}`
+///  - storm-codex enveloppé : `{authenticated, current:{isPlaying, track:{…}}}`.
+pub fn parse_now_playing(body: &str) -> Result<NowPlaying, String> {
+    let v: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+    // déballe la forme enveloppée si présente
+    let cur = v.get("current").filter(|c| !c.is_null()).unwrap_or(&v);
+    let authed = v.get("authenticated").and_then(Value::as_bool).unwrap_or(true);
+    let is_playing = cur.get("isPlaying").and_then(Value::as_bool).unwrap_or(false);
+    let track = cur.get("track");
+    let title = track
+        .and_then(|t| t.get("name"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let artist = track
+        .and_then(|t| t.get("artists"))
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.get("name").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .filter(|s| !s.is_empty());
+    Ok(NowPlaying {
+        playing: authed && is_playing && title.is_some(),
+        title,
+        artist,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_gpu_fixture() {
+        let g = parse_gpu(include_str!("fixtures/gpu.json")).unwrap();
+        assert!(g.reachable);
+        assert_eq!(g.model_count(), 1);
+        assert!((g.vram_held_gib - 6.6).abs() < 0.01);
+        assert_eq!(g.resident[0].processor, "GPU");
+        assert_eq!(g.resident[0].expires_in_s, Some(287));
+    }
+
+    #[test]
+    fn parses_now_playing_orpheus_shape() {
+        let np = parse_now_playing(include_str!("fixtures/now_playing.json")).unwrap();
+        assert!(np.playing);
+        assert_eq!(np.title.as_deref(), Some("California Gurls"));
+        assert_eq!(np.artist.as_deref(), Some("Katy Perry, Snoop Dogg"));
+    }
+
+    #[test]
+    fn now_playing_off_is_not_playing() {
+        let np = parse_now_playing(include_str!("fixtures/now_playing_off.json")).unwrap();
+        assert!(!np.playing);
+        assert!(np.title.is_none());
+    }
+
+    #[test]
+    fn parses_storm_codex_wrapped_shape() {
+        let body = r#"{"authenticated":true,"current":{"isPlaying":true,"track":{"name":"X","artists":[{"name":"Y"}]}}}"#;
+        let np = parse_now_playing(body).unwrap();
+        assert!(np.playing);
+        assert_eq!(np.title.as_deref(), Some("X"));
+    }
+
+    #[test]
+    fn unauthenticated_is_not_playing() {
+        let body = r#"{"authenticated":false}"#;
+        assert!(!parse_now_playing(body).unwrap().playing);
+    }
+}
