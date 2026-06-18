@@ -31,7 +31,7 @@ pub fn ui(app: &mut AegisApp, ui: &mut egui::Ui) {
                 app.chat_input.clear();
                 {
                     let mut s = app.chat.lock().unwrap();
-                    s.messages.push(ChatMsg { role: "you".into(), text: text.clone() });
+                    s.messages.push(ChatMsg { role: "you".into(), text: text.clone(), links: Vec::new() });
                     s.thinking = true;
                 }
                 let _ = app.chat_tx.send(text);
@@ -55,6 +55,12 @@ pub fn ui(app: &mut AegisApp, ui: &mut egui::Ui) {
                     ui.label(egui::RichText::new(format!("{who}  ")).color(col).strong());
                     ui.label(&m.text);
                 });
+                // Liens d'action (Jarvis a proposé/ouvert une page) → boutons.
+                for link in &m.links {
+                    if ui.button(format!("↗ {}", link.title)).clicked() {
+                        let _ = open::that(&link.url);
+                    }
+                }
                 ui.add_space(6.0);
             }
             if s.thinking {

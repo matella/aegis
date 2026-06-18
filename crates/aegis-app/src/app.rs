@@ -80,7 +80,7 @@ impl AegisApp {
 
         // Chat Jarvis (WS /ws, reconnexion auto).
         let chat = Arc::new(Mutex::new(chat::ChatState::default()));
-        let chat_tx = chat::spawn(&rt, cfg.jarvis_url.clone(), chat.clone(), ctx.clone());
+        let chat_tx = chat::spawn(&rt, cfg.jarvis_url.clone(), cfg_arc.clone(), chat.clone(), ctx.clone());
 
         Self {
             rt,

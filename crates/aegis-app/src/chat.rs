@@ -1,14 +1,22 @@
 //! Client chat Jarvis via la gateway `/ws` (mode ouvert → pas de token). On envoie `{"text": …}`,
 //! on reçoit `{kind:"ready"}`, `{kind:"history", messages}`, `{kind:"turn", result:{message}}`.
 //! Reconnexion automatique. La logique d'actions (Intents `desktop.*`) viendra en #2b.
+use aegis_core::Config;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio_tungstenite::tungstenite::Message;
 
+/// Lien d'action attaché à un message (artifact `kind:"link"` de Jarvis), résolu en URL absolue.
+pub struct ChatLink {
+    pub title: String,
+    pub url: String,
+}
+
 pub struct ChatMsg {
     pub role: String, // "you" | "jarvis"
     pub text: String,
+    pub links: Vec<ChatLink>,
 }
 
 #[derive(Default)]
@@ -31,21 +39,63 @@ fn to_ws(url: &str) -> String {
     format!("{ws}/ws")
 }
 
-fn handle_frame(text: &str, state: &Arc<Mutex<ChatState>>, ctx: &egui::Context) {
+/// Résout un artifact lien (`{app, path}` ou `{url}`) en URL absolue via la config Aegis.
+fn resolve_url(cfg: &Config, app: &str, path: &str, url: Option<&str>) -> Option<String> {
+    if let Some(u) = url.filter(|u| !u.is_empty()) {
+        return Some(u.to_string());
+    }
+    let base = match app {
+        "storm-codex" | "storm_codex" | "stormcodex" => &cfg.storm_codex_url,
+        "orpheus" => &cfg.orpheus_url,
+        "jarvis" => &cfg.jarvis_url,
+        _ => return None,
+    };
+    Some(format!("{}{}", base.trim_end_matches('/'), path))
+}
+
+fn handle_frame(text: &str, state: &Arc<Mutex<ChatState>>, ctx: &egui::Context, cfg: &Arc<Mutex<Config>>) {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(text) else { return };
     match v.get("kind").and_then(|k| k.as_str()) {
         Some("turn") => {
-            let msg = v
-                .get("result")
+            let result = v.get("result");
+            let msg = result
                 .and_then(|r| r.get("message"))
                 .and_then(|m| m.as_str())
                 .unwrap_or("")
                 .to_string();
-            let mut s = state.lock().unwrap();
-            if !msg.is_empty() {
-                s.messages.push(ChatMsg { role: "jarvis".into(), text: msg });
+            // Actions : artifacts kind:"link" → résolus en URL ; `open:true` = ouverture auto.
+            let mut links = Vec::new();
+            let mut to_open = Vec::new();
+            if let Some(arts) = result.and_then(|r| r.get("artifacts")).and_then(|a| a.as_array()) {
+                let cfg = cfg.lock().unwrap();
+                for a in arts {
+                    if a.get("kind").and_then(|k| k.as_str()) != Some("link") {
+                        continue;
+                    }
+                    let title = a.get("title").and_then(|t| t.as_str()).unwrap_or("Open").to_string();
+                    let d = a.get("data");
+                    let app = d.and_then(|d| d.get("app")).and_then(|x| x.as_str()).unwrap_or("");
+                    let path = d.and_then(|d| d.get("path")).and_then(|x| x.as_str()).unwrap_or("");
+                    let url_field = d.and_then(|d| d.get("url")).and_then(|x| x.as_str());
+                    let open = d.and_then(|d| d.get("open")).and_then(|x| x.as_bool()).unwrap_or(false);
+                    if let Some(url) = resolve_url(&cfg, app, path, url_field) {
+                        if open {
+                            to_open.push(url.clone());
+                        }
+                        links.push(ChatLink { title, url });
+                    }
+                }
             }
-            s.thinking = false;
+            {
+                let mut s = state.lock().unwrap();
+                if !msg.is_empty() || !links.is_empty() {
+                    s.messages.push(ChatMsg { role: "jarvis".into(), text: msg, links });
+                }
+                s.thinking = false;
+            }
+            for u in to_open {
+                let _ = open::that(&u); // ouverture déterministe côté desktop (non destructif)
+            }
         }
         Some("history") => {
             if let Some(arr) = v.get("messages").and_then(|m| m.as_array()) {
@@ -55,7 +105,7 @@ fn handle_frame(text: &str, state: &Arc<Mutex<ChatState>>, ctx: &egui::Context) 
                     .filter_map(|m| {
                         let role = m.get("role")?.as_str()?.to_string();
                         let text = m.get("content")?.as_str()?.to_string();
-                        (!text.is_empty()).then_some(ChatMsg { role, text })
+                        (!text.is_empty()).then_some(ChatMsg { role, text, links: Vec::new() })
                     })
                     .collect();
             }
@@ -69,6 +119,7 @@ fn handle_frame(text: &str, state: &Arc<Mutex<ChatState>>, ctx: &egui::Context) 
 pub fn spawn(
     rt: &tokio::runtime::Handle,
     gateway_url: String,
+    cfg: Arc<Mutex<Config>>,
     state: Arc<Mutex<ChatState>>,
     ctx: egui::Context,
 ) -> tokio::sync::mpsc::UnboundedSender<String> {
@@ -96,7 +147,7 @@ pub fn spawn(
                                 None => return, // émetteur droppé → app fermée
                             },
                             inc = read.next() => match inc {
-                                Some(Ok(Message::Text(t))) => handle_frame(&t, &state, &ctx),
+                                Some(Ok(Message::Text(t))) => handle_frame(&t, &state, &ctx, &cfg),
                                 Some(Ok(_)) => {} // binaire/ping ignorés
                                 _ => break,       // déconnexion / erreur
                             },
