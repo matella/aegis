@@ -1,9 +1,6 @@
-//! Tray + menu (Show/Quit). Le piège eframe+Windows : fenêtre masquée, `update()` ne tourne plus →
-//! traiter l'action DANS update() ne marche pas. La solution : le HANDLER d'event (qui tourne sur le
-//! thread de la boucle winit, même fenêtre cachée) envoie LUI-MÊME la commande de fenêtre via le
-//! `egui::Context` (`send_viewport_cmd`) + `request_repaint()` pour réveiller eframe. Tolérant.
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+//! Tray + menu (Show/Quit). Show appelle `WindowCtl::show()` (Win32 direct sur Windows → fiable même
+//! fenêtre masquée). Quit = `std::process::exit(0)` (bulletproof). Tolérant : échec de build = no-op.
+use crate::window::WindowCtl;
 use tray_icon::menu::{Menu, MenuEvent, MenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
@@ -12,23 +9,14 @@ pub struct Tray {
 }
 
 impl Tray {
-    /// `really_quit` : partagé avec l'app ; mis à true quand l'utilisateur choisit Quit, pour que le
-    /// handler de fermeture de l'app NE masque PAS (laisse fermer).
-    pub fn new(ctx: &egui::Context, really_quit: Arc<AtomicBool>) -> Self {
+    pub fn new(win: WindowCtl) -> Self {
         Self {
-            _icon: build(ctx, really_quit).ok(),
+            _icon: build(win).ok(),
         }
     }
 }
 
-fn show(ctx: &egui::Context) {
-    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-    ctx.request_repaint();
-}
-
-fn build(ctx: &egui::Context, really_quit: Arc<AtomicBool>) -> Result<TrayIcon, Box<dyn std::error::Error>> {
+fn build(win: WindowCtl) -> Result<TrayIcon, Box<dyn std::error::Error>> {
     let menu = Menu::new();
     let show_item = MenuItem::new("Show Aegis", true, None);
     let quit_item = MenuItem::new("Quit", true, None);
@@ -43,23 +31,19 @@ fn build(ctx: &egui::Context, really_quit: Arc<AtomicBool>) -> Result<TrayIcon, 
     let show_id = show_item.id().clone();
     let quit_id = quit_item.id().clone();
 
-    // Menu : agit directement sur la fenêtre depuis le handler (fonctionne fenêtre masquée).
-    let mctx = ctx.clone();
+    let w = win.clone();
     MenuEvent::set_event_handler(Some(move |ev: MenuEvent| {
         if ev.id == show_id {
-            show(&mctx);
+            w.show();
         } else if ev.id == quit_id {
-            really_quit.store(true, Ordering::SeqCst);
-            mctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            mctx.request_repaint();
+            std::process::exit(0);
         }
     }));
 
-    // Clic gauche sur l'icône → afficher.
-    let tctx = ctx.clone();
+    let w2 = win;
     TrayIconEvent::set_event_handler(Some(move |ev: TrayIconEvent| {
         if let TrayIconEvent::Click { .. } = ev {
-            show(&tctx);
+            w2.show();
         }
     }));
 

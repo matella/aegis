@@ -1,8 +1,7 @@
 //! AegisApp : état partagé + boucle egui. Logique métier dans aegis-core/client ; ici, du câblage.
-use crate::{poll, tray, views};
+use crate::{poll, tray, views, window};
 use aegis_core::{Config, GpuState, NowPlaying, ServiceHealth};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// Données affichées par le Dashboard (alimentées par le poller).
@@ -29,9 +28,9 @@ pub struct AegisApp {
     pub up_tx: aegis_uploader::EventSender,
     pub watchers: Vec<aegis_uploader::watcher::WatcherHandle>,
     pub panel: Panel,
+    pub win: window::WindowCtl,
     #[allow(dead_code)] // gardé vivant : drop = l'icône tray disparaît
     pub tray: tray::Tray,
-    pub really_quit: Arc<AtomicBool>,
     // tampons d'édition (Settings)
     pub e_jarvis: String,
     pub e_jarvis_token: String,
@@ -73,7 +72,7 @@ impl AegisApp {
         let dash = Arc::new(Mutex::new(DashboardData::default()));
         poll::spawn_poller(rt.clone(), cfg_arc.clone(), dash.clone(), ctx.clone());
 
-        let really_quit = Arc::new(AtomicBool::new(false));
+        let win = window::WindowCtl::new(ctx.clone());
 
         Self {
             rt,
@@ -83,8 +82,8 @@ impl AegisApp {
             up_tx: tx,
             watchers,
             panel: Panel::Dashboard,
-            tray: tray::Tray::new(&ctx, really_quit.clone()),
-            really_quit,
+            tray: tray::Tray::new(win.clone()),
+            win,
             e_jarvis: cfg.jarvis_url,
             e_jarvis_token: cfg.jarvis_token.unwrap_or_default(),
             e_storm: cfg.storm_codex_url,
@@ -171,16 +170,28 @@ fn boot_uploader(
 }
 
 impl eframe::App for AegisApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Le tray agit directement sur la fenêtre (handlers) — rien à poller ici.
-        // Fermeture → masquer dans le tray (sauf Quit explicite) ; l'app continue de tourner.
-        if !self.really_quit.load(Ordering::SeqCst) && ctx.input(|i| i.viewport().close_requested()) {
-            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        // Capte le handle natif (Windows) au 1er frame → pilotage show/hide fiable depuis le tray.
+        #[cfg(windows)]
+        {
+            use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+            if let Ok(h) = frame.window_handle() {
+                if let RawWindowHandle::Win32(w) = h.as_raw() {
+                    self.win.set_hwnd(w.hwnd.get());
+                }
+            }
         }
-        // Réduction → tray.
+        #[cfg(not(windows))]
+        let _ = frame;
+
+        // Fermeture ET réduction → masquer dans le tray (Win32 direct) ; l'app continue de tourner.
+        // Quit se fait via le menu tray (process::exit), pas par le bouton de fermeture.
+        if ctx.input(|i| i.viewport().close_requested()) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.win.hide();
+        }
         if ctx.input(|i| i.viewport().minimized == Some(true)) {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            self.win.hide();
         }
 
         egui::SidePanel::left("nav").exact_width(168.0).show(ctx, |ui| {

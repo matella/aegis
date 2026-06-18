@@ -4,6 +4,7 @@ mod app;
 mod poll;
 mod tray;
 mod views;
+mod window;
 
 use aegis_core::Config;
 

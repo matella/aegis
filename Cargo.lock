@@ -130,9 +130,11 @@ dependencies = [
  "eframe",
  "egui",
  "open",
+ "raw-window-handle",
  "serde_json",
  "tokio",
  "tray-icon",
+ "windows",
 ]
 
 [[package]]
