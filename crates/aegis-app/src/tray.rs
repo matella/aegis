@@ -1,36 +1,32 @@
-//! Icône de tray + menu (Show/Quit). L'app reste en arrière-plan ; réduire/fermer la masquent ici.
-//! Tolérant : si la création échoue (plateforme/permissions), on dégrade sans crash.
-use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem};
+//! Icône de tray + menu (Show/Quit). Point clé : fenêtre masquée, egui n'appelle plus `update()`.
+//! On installe donc des HANDLERS d'events (menu + icône) qui empilent une action ET réveillent egui
+//! (`request_repaint`) → `update()` retourne tourner et traite l'action. Tolérant : échec = no-op.
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
+use tray_icon::menu::{Menu, MenuEvent, MenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
+#[derive(Clone, Copy)]
 pub enum TrayAction {
     Show,
     Quit,
 }
 
+type Queue = Arc<Mutex<VecDeque<TrayAction>>>;
+
 pub struct Tray {
     _icon: Option<TrayIcon>,
-    show_id: Option<MenuId>,
-    quit_id: Option<MenuId>,
+    queue: Queue,
 }
 
 impl Tray {
-    pub fn new() -> Self {
-        match Self::build() {
-            Ok((icon, show, quit)) => Self {
-                _icon: Some(icon),
-                show_id: Some(show),
-                quit_id: Some(quit),
-            },
-            Err(_) => Self {
-                _icon: None,
-                show_id: None,
-                quit_id: None,
-            },
-        }
+    pub fn new(ctx: &egui::Context) -> Self {
+        let queue: Queue = Arc::new(Mutex::new(VecDeque::new()));
+        let icon = Self::build(ctx, queue.clone()).ok();
+        Self { _icon: icon, queue }
     }
 
-    fn build() -> Result<(TrayIcon, MenuId, MenuId), Box<dyn std::error::Error>> {
+    fn build(ctx: &egui::Context, queue: Queue) -> Result<TrayIcon, Box<dyn std::error::Error>> {
         let menu = Menu::new();
         let show = MenuItem::new("Show Aegis", true, None);
         let quit = MenuItem::new("Quit", true, None);
@@ -41,26 +37,41 @@ impl Tray {
             .with_menu(Box::new(menu))
             .with_icon(make_icon())
             .build()?;
-        Ok((tray, show.id().clone(), quit.id().clone()))
+
+        let show_id = show.id().clone();
+        let quit_id = quit.id().clone();
+
+        // Menu : empile l'action + réveille egui.
+        let (mq, mctx) = (queue.clone(), ctx.clone());
+        MenuEvent::set_event_handler(Some(move |ev: MenuEvent| {
+            let action = if ev.id == show_id {
+                Some(TrayAction::Show)
+            } else if ev.id == quit_id {
+                Some(TrayAction::Quit)
+            } else {
+                None
+            };
+            if let Some(a) = action {
+                mq.lock().unwrap().push_back(a);
+                mctx.request_repaint();
+            }
+        }));
+
+        // Clic gauche sur l'icône → afficher.
+        let (tq, tctx) = (queue, ctx.clone());
+        TrayIconEvent::set_event_handler(Some(move |ev: TrayIconEvent| {
+            if let TrayIconEvent::Click { .. } = ev {
+                tq.lock().unwrap().push_back(TrayAction::Show);
+                tctx.request_repaint();
+            }
+        }));
+
+        Ok(tray)
     }
 
-    /// À appeler chaque frame : draine les events tray/menu et renvoie l'action éventuelle.
+    /// À appeler chaque frame : renvoie la prochaine action tray en attente.
     pub fn poll(&self) -> Option<TrayAction> {
-        // Clic sur l'icône → afficher.
-        while let Ok(ev) = TrayIconEvent::receiver().try_recv() {
-            if let TrayIconEvent::Click { .. } = ev {
-                return Some(TrayAction::Show);
-            }
-        }
-        while let Ok(ev) = MenuEvent::receiver().try_recv() {
-            if Some(&ev.id) == self.show_id.as_ref() {
-                return Some(TrayAction::Show);
-            }
-            if Some(&ev.id) == self.quit_id.as_ref() {
-                return Some(TrayAction::Quit);
-            }
-        }
-        None
+        self.queue.lock().unwrap().pop_front()
     }
 }
 

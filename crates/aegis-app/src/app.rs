@@ -79,7 +79,7 @@ impl AegisApp {
             up_tx: tx,
             watchers,
             panel: Panel::Dashboard,
-            tray: tray::Tray::new(),
+            tray: tray::Tray::new(&ctx),
             really_quit: false,
             e_jarvis: cfg.jarvis_url,
             e_jarvis_token: cfg.jarvis_token.unwrap_or_default(),
