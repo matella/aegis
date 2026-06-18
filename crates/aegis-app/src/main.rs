@@ -1,6 +1,7 @@
 // Aegis — console opérateur native (egui). Boot : runtime tokio + config + fenêtre eframe.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod app;
+mod chat;
 mod poll;
 mod tray;
 mod views;

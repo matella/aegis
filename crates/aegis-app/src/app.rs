@@ -1,5 +1,5 @@
 //! AegisApp : état partagé + boucle egui. Logique métier dans aegis-core/client ; ici, du câblage.
-use crate::{poll, tray, views, window};
+use crate::{chat, poll, tray, views, window};
 use aegis_core::{Config, GpuState, NowPlaying, ServiceHealth};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -16,6 +16,7 @@ pub struct DashboardData {
 #[derive(PartialEq, Clone, Copy)]
 pub enum Panel {
     Dashboard,
+    Jarvis,
     Uploader,
     Settings,
 }
@@ -28,6 +29,9 @@ pub struct AegisApp {
     pub up_tx: aegis_uploader::EventSender,
     pub watchers: Vec<aegis_uploader::watcher::WatcherHandle>,
     pub panel: Panel,
+    pub chat: Arc<Mutex<chat::ChatState>>,
+    pub chat_tx: tokio::sync::mpsc::UnboundedSender<String>,
+    pub chat_input: String,
     pub win: window::WindowCtl,
     #[allow(dead_code)] // gardé vivant : drop = l'icône tray disparaît
     pub tray: tray::Tray,
@@ -74,6 +78,10 @@ impl AegisApp {
 
         let win = window::WindowCtl::new(ctx.clone());
 
+        // Chat Jarvis (WS /ws, reconnexion auto).
+        let chat = Arc::new(Mutex::new(chat::ChatState::default()));
+        let chat_tx = chat::spawn(&rt, cfg.jarvis_url.clone(), chat.clone(), ctx.clone());
+
         Self {
             rt,
             cfg: cfg_arc,
@@ -82,6 +90,9 @@ impl AegisApp {
             up_tx: tx,
             watchers,
             panel: Panel::Dashboard,
+            chat,
+            chat_tx,
+            chat_input: String::new(),
             tray: tray::Tray::new(win.clone()),
             win,
             e_jarvis: cfg.jarvis_url,
@@ -204,6 +215,7 @@ impl eframe::App for AegisApp {
                 }
             };
             nav(ui, Panel::Dashboard, "▦  Dashboard");
+            nav(ui, Panel::Jarvis, "✦  Jarvis");
             nav(ui, Panel::Uploader, "⇪  Uploader");
             ui.add_space(6.0);
             ui.separator();
@@ -213,6 +225,7 @@ impl eframe::App for AegisApp {
 
         egui::CentralPanel::default().show(ctx, |ui| match self.panel {
             Panel::Dashboard => views::dashboard::ui(self, ui),
+            Panel::Jarvis => views::chat::ui(self, ui),
             Panel::Uploader => views::uploader::ui(self, ui),
             Panel::Settings => views::settings::ui(self, ui),
         });
