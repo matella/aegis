@@ -30,7 +30,7 @@ pub struct MockGpu(pub Result<GpuState, String>);
 #[async_trait]
 impl GpuClient for MockGpu {
     async fn gpu(&self) -> Result<GpuState, String> {
-        self.0.clone().map_err(|e| e)
+        self.0.clone()
     }
     async fn free(&self) -> Result<(), String> {
         Ok(())
