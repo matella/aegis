@@ -18,9 +18,10 @@ pub fn spawn_poller(
             let snapshot = cfg.lock().unwrap().clone();
             let clients = HttpClients::new(&snapshot);
 
-            // Santé : Jarvis & storm-codex sur /api/health ; Orpheus sur /api/auth/status.
+            // Santé : Jarvis sur /health (gateway) ; storm-codex sur /api/health ; Orpheus sur
+            // /api/auth/status.
             let probes = [
-                ("Jarvis", snapshot.jarvis_url.as_str(), "/api/health"),
+                ("Jarvis", snapshot.jarvis_url.as_str(), "/health"),
                 ("storm-codex", snapshot.storm_codex_url.as_str(), "/api/health"),
                 ("Orpheus", snapshot.orpheus_url.as_str(), "/api/auth/status"),
             ];
