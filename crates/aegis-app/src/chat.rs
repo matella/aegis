@@ -89,7 +89,7 @@ pub fn spawn(
                             out = rx.recv() => match out {
                                 Some(text) => {
                                     let frame = serde_json::json!({ "text": text }).to_string();
-                                    if write.send(Message::Text(frame.into())).await.is_err() {
+                                    if write.send(Message::Text(frame)).await.is_err() {
                                         break;
                                     }
                                 }
