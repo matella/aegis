@@ -1,11 +1,19 @@
 //! Client chat Jarvis via la gateway `/ws` (mode ouvert → pas de token). On envoie `{"text": …}`,
 //! on reçoit `{kind:"ready"}`, `{kind:"history", messages}`, `{kind:"turn", result:{message}}`.
 //! Reconnexion automatique. La logique d'actions (Intents `desktop.*`) viendra en #2b.
+use crate::audio::Player;
 use aegis_core::Config;
+use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio_tungstenite::tungstenite::Message;
+
+/// Message sortant vers la gateway : texte (chat) ou frame audio 16 kHz (voix « hey Jarvis »).
+pub enum Outbound {
+    Text(String),
+    Wake(String), // PCM16 16 kHz en base64
+}
 
 /// Lien d'action attaché à un message (artifact `kind:"link"` de Jarvis), résolu en URL absolue.
 pub struct ChatLink {
@@ -24,6 +32,7 @@ pub struct ChatState {
     pub messages: Vec<ChatMsg>,
     pub connected: bool,
     pub thinking: bool,
+    pub wake: bool, // « hey Jarvis » détecté → écoute en cours (indicateur UI)
 }
 
 /// Convertit l'URL HTTP de la gateway en URL WebSocket `/ws`.
@@ -53,9 +62,34 @@ fn resolve_url(cfg: &Config, app: &str, path: &str, url: Option<&str>) -> Option
     Some(format!("{}{}", base.trim_end_matches('/'), path))
 }
 
-fn handle_frame(text: &str, state: &Arc<Mutex<ChatState>>, ctx: &egui::Context, cfg: &Arc<Mutex<Config>>) {
+fn handle_frame(
+    text: &str,
+    state: &Arc<Mutex<ChatState>>,
+    ctx: &egui::Context,
+    cfg: &Arc<Mutex<Config>>,
+    player: &Player,
+) {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(text) else { return };
     match v.get("kind").and_then(|k| k.as_str()) {
+        // Voix : wake-word détecté → on écoute. La transcription arrive en message « you ».
+        Some("wake") => {
+            state.lock().unwrap().wake = true;
+        }
+        Some("transcript") => {
+            if let Some(t) = v.get("text").and_then(|t| t.as_str()).filter(|t| !t.is_empty()) {
+                let mut s = state.lock().unwrap();
+                s.messages.push(ChatMsg { role: "you".into(), text: t.to_string(), links: Vec::new() });
+                s.thinking = true;
+                s.wake = false;
+            }
+        }
+        Some("tts") => {
+            if let Some(wav) = v.get("wav").and_then(|w| w.as_str()) {
+                if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(wav) {
+                    player.play(bytes);
+                }
+            }
+        }
         Some("turn") => {
             let result = v.get("result");
             let msg = result
@@ -110,7 +144,7 @@ fn handle_frame(text: &str, state: &Arc<Mutex<ChatState>>, ctx: &egui::Context, 
                     .collect();
             }
         }
-        _ => {} // ready / presence / tts : ignorés pour le chat texte
+        _ => {} // ready / presence : ignorés
     }
     ctx.request_repaint();
 }
@@ -122,8 +156,9 @@ pub fn spawn(
     cfg: Arc<Mutex<Config>>,
     state: Arc<Mutex<ChatState>>,
     ctx: egui::Context,
-) -> tokio::sync::mpsc::UnboundedSender<String> {
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    player: Player,
+) -> tokio::sync::mpsc::UnboundedSender<Outbound> {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Outbound>();
     rt.spawn(async move {
         loop {
             let url = to_ws(&gateway_url);
@@ -138,8 +173,12 @@ pub fn spawn(
                     loop {
                         tokio::select! {
                             out = rx.recv() => match out {
-                                Some(text) => {
-                                    let frame = serde_json::json!({ "text": text }).to_string();
+                                Some(outbound) => {
+                                    let frame = match outbound {
+                                        Outbound::Text(text) => serde_json::json!({ "text": text }),
+                                        Outbound::Wake(pcm) => serde_json::json!({ "kind": "wake_chunk", "pcm": pcm }),
+                                    }
+                                    .to_string();
                                     if write.send(Message::Text(frame)).await.is_err() {
                                         break;
                                     }
@@ -147,7 +186,7 @@ pub fn spawn(
                                 None => return, // émetteur droppé → app fermée
                             },
                             inc = read.next() => match inc {
-                                Some(Ok(Message::Text(t))) => handle_frame(&t, &state, &ctx, &cfg),
+                                Some(Ok(Message::Text(t))) => handle_frame(&t, &state, &ctx, &cfg, &player),
                                 Some(Ok(_)) => {} // binaire/ping ignorés
                                 _ => break,       // déconnexion / erreur
                             },

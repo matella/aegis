@@ -1,6 +1,7 @@
 //! Vue chat Jarvis : historique + saisie. Le client WS (crate::chat) gère la connexion/reconnexion.
 use crate::app::AegisApp;
-use crate::chat::ChatMsg;
+use crate::audio;
+use crate::chat::{ChatMsg, Outbound};
 use crate::views::{DIM, GREEN, RED};
 
 const YOU: egui::Color32 = egui::Color32::from_rgb(126, 151, 255);
@@ -8,11 +9,34 @@ const YOU: egui::Color32 = egui::Color32::from_rgb(126, 151, 255);
 pub fn ui(app: &mut AegisApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         ui.heading("Jarvis");
-        let connected = app.chat.lock().unwrap().connected;
+        let (connected, wake) = {
+            let s = app.chat.lock().unwrap();
+            (s.connected, s.wake)
+        };
         ui.colored_label(
             if connected { GREEN } else { RED },
             if connected { "● online" } else { "○ offline (gateway?)" },
         );
+        // Voix « hey Jarvis » : toggle micro (capture continue → gateway).
+        let label = if app.listening {
+            if wake { "🎙 listening…" } else { "🎤 mic on" }
+        } else {
+            "🎤 mic off"
+        };
+        if ui.selectable_label(app.listening, label).clicked() {
+            app.listening = !app.listening;
+            if app.listening {
+                app.listen_handle = audio::start_listening(app.chat_tx.clone());
+                if app.listen_handle.is_none() {
+                    app.listening = false; // pas de micro / format non géré
+                }
+            } else {
+                app.listen_handle = None; // drop → coupe la capture
+            }
+        }
+        if app.listening {
+            ui.label(egui::RichText::new("say \"hey jarvis\"").small().color(DIM));
+        }
     });
     ui.add_space(4.0);
 
@@ -34,7 +58,7 @@ pub fn ui(app: &mut AegisApp, ui: &mut egui::Ui) {
                     s.messages.push(ChatMsg { role: "you".into(), text: text.clone(), links: Vec::new() });
                     s.thinking = true;
                 }
-                let _ = app.chat_tx.send(text);
+                let _ = app.chat_tx.send(Outbound::Text(text));
                 resp.request_focus();
             }
         });

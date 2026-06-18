@@ -20,6 +20,9 @@ serde_json.workspace = true
 raw-window-handle = "0.6"
 tokio-tungstenite = "0.24"
 futures-util = "0.3"
+cpal = "0.15"
+rodio = "0.19"
+base64 = "0.22"
 
 # Pilotage fenêtre bas-niveau (show/hide tray fiable) — Windows uniquement.
 [target.'cfg(windows)'.dependencies]

@@ -1,5 +1,5 @@
 //! AegisApp : état partagé + boucle egui. Logique métier dans aegis-core/client ; ici, du câblage.
-use crate::{chat, poll, tray, views, window};
+use crate::{audio, chat, poll, tray, views, window};
 use aegis_core::{Config, GpuState, NowPlaying, ServiceHealth};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -30,8 +30,10 @@ pub struct AegisApp {
     pub watchers: Vec<aegis_uploader::watcher::WatcherHandle>,
     pub panel: Panel,
     pub chat: Arc<Mutex<chat::ChatState>>,
-    pub chat_tx: tokio::sync::mpsc::UnboundedSender<String>,
+    pub chat_tx: tokio::sync::mpsc::UnboundedSender<chat::Outbound>,
     pub chat_input: String,
+    pub listening: bool,
+    pub listen_handle: Option<audio::ListenHandle>,
     pub win: window::WindowCtl,
     #[allow(dead_code)] // gardé vivant : drop = l'icône tray disparaît
     pub tray: tray::Tray,
@@ -78,9 +80,17 @@ impl AegisApp {
 
         let win = window::WindowCtl::new(ctx.clone());
 
-        // Chat Jarvis (WS /ws, reconnexion auto).
+        // Chat Jarvis (WS /ws, reconnexion auto) + lecteur TTS pour la voix.
+        let player = audio::Player::new();
         let chat = Arc::new(Mutex::new(chat::ChatState::default()));
-        let chat_tx = chat::spawn(&rt, cfg.jarvis_url.clone(), cfg_arc.clone(), chat.clone(), ctx.clone());
+        let chat_tx = chat::spawn(
+            &rt,
+            cfg.jarvis_url.clone(),
+            cfg_arc.clone(),
+            chat.clone(),
+            ctx.clone(),
+            player, // déplacé : le thread de lecture TTS vit tant que le client chat existe
+        );
 
         Self {
             rt,
@@ -93,6 +103,8 @@ impl AegisApp {
             chat,
             chat_tx,
             chat_input: String::new(),
+            listening: false,
+            listen_handle: None,
             tray: tray::Tray::new(win.clone()),
             win,
             e_jarvis: cfg.jarvis_url,
