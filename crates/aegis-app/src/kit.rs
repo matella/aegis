@@ -87,6 +87,29 @@ pub fn toggle(ui: &mut Ui, text: &str, on: bool) -> Response {
     resp
 }
 
+/// Élément de navigation : icône (colonne fixe) + libellé, fond plein si sélectionné/survolé.
+/// Garantit l'alignement quelle que soit la largeur du glyphe d'icône.
+pub fn nav_item(ui: &mut Ui, icon: &str, label: &str, selected: bool) -> Response {
+    let (rect, resp) = ui.allocate_at_least(Vec2::new(ui.available_width(), 34.0), Sense::click());
+    let bg = if selected {
+        PANEL2
+    } else if resp.hovered() {
+        PANEL2.gamma_multiply(0.6)
+    } else {
+        Color32::TRANSPARENT
+    };
+    let fg = if selected { TEXT } else { DIM };
+    let p = ui.painter();
+    if bg != Color32::TRANSPARENT {
+        p.rect_filled(rect, CornerRadius::same(7), bg);
+    }
+    let icon_g = p.layout_no_wrap(icon.to_owned(), FontId::proportional(14.0), fg);
+    p.galley(egui::pos2(rect.left() + 11.0, rect.center().y - icon_g.size().y / 2.0), icon_g, fg);
+    let label_g = p.layout_no_wrap(label.to_owned(), FontId::proportional(13.0), fg);
+    p.galley(egui::pos2(rect.left() + 38.0, rect.center().y - label_g.size().y / 2.0), label_g, fg);
+    resp
+}
+
 /// Jauge fine pleine largeur (VRAM…). `frac` ∈ [0,1].
 pub fn gauge(ui: &mut Ui, frac: f32, fill: Color32) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 7.0), Sense::hover());

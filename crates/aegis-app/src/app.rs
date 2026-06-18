@@ -246,29 +246,35 @@ impl eframe::App for AegisApp {
                 egui::Frame::new()
                     .fill(theme::SIDE)
                     .stroke(egui::Stroke::new(1.0, theme::LINE))
-                    .inner_margin(egui::Margin::symmetric(8, 12)),
+                    .inner_margin(egui::Margin::symmetric(10, 12)),
             )
             .show(ctx, |ui| {
-                ui.add_space(2.0);
-                ui.label(egui::RichText::new("Aegis").size(15.0).strong().color(theme::ACCENT));
-                ui.add_space(14.0);
+                ui.spacing_mut().item_spacing.y = 3.0;
 
-                let mut nav = |ui: &mut egui::Ui, p: Panel, label: &str| {
-                    if ui
-                        .add_sized([ui.available_width(), 30.0], egui::SelectableLabel::new(self.panel == p, label))
-                        .clicked()
-                    {
+                // Marque.
+                ui.horizontal(|ui| {
+                    ui.add_space(1.0);
+                    ui.label(egui::RichText::new("Aegis").size(16.0).strong().color(theme::ACCENT));
+                });
+                ui.add_space(10.0);
+                crate::kit::hairline(ui);
+                ui.add_space(8.0);
+
+                let mut nav = |ui: &mut egui::Ui, p: Panel, icon: &str, label: &str| {
+                    if crate::kit::nav_item(ui, icon, label, self.panel == p).clicked() {
                         self.panel = p;
                     }
                 };
                 // Icônes = glyphes emoji (seuls rendus par la police egui ; ▦/⇪/✦ → tofu).
-                nav(ui, Panel::Dashboard, "📊   Dashboard");
-                nav(ui, Panel::Uploader, "📤   Uploader");
-                nav(ui, Panel::Jarvis, "✨   Jarvis");
+                nav(ui, Panel::Dashboard, "📊", "Dashboard");
+                nav(ui, Panel::Uploader, "📤", "Uploader");
+                nav(ui, Panel::Jarvis, "✨", "Jarvis");
                 ui.add_space(8.0);
-                nav(ui, Panel::Settings, "⚙   Settings");
+                crate::kit::hairline(ui);
+                ui.add_space(8.0);
+                nav(ui, Panel::Settings, "⚙", "Settings");
 
-                // Pied : état de connexion Jarvis.
+                // Pied : état de connexion Jarvis, séparé par un hairline.
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                     let connected = self.chat.lock().unwrap().connected;
                     let (c, t) = if connected {
@@ -276,10 +282,13 @@ impl eframe::App for AegisApp {
                     } else {
                         (theme::RED, "jarvis offline")
                     };
+                    ui.add_space(2.0);
                     ui.horizontal(|ui| {
                         crate::kit::led(ui, c);
-                        ui.label(egui::RichText::new(t).size(10.0).color(theme::DIM));
+                        ui.label(egui::RichText::new(t).size(11.0).color(theme::DIM));
                     });
+                    ui.add_space(8.0);
+                    crate::kit::hairline(ui);
                 });
             });
 
