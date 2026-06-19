@@ -64,21 +64,16 @@ pub fn apply(ctx: &egui::Context) {
     ctx.set_style(style);
 }
 
-/// Icône d'app/fenêtre 32×32 : carré accent avec coins adoucis (mieux que le défaut).
+/// Icône d'app/fenêtre : le bouclier Aegis (assets/aegis.png, généré par assets/gen_icon.py),
+/// décodé en RGBA. Repli sur un carré accent si le décodage échoue.
 pub fn app_icon() -> egui::IconData {
-    let (w, h) = (32usize, 32usize);
-    let mut rgba = vec![0u8; w * h * 4];
-    let bg = [0x0d, 0x0f, 0x12, 0xff];
-    let ac = [0x7e, 0x97, 0xff, 0xff];
-    for y in 0..h {
-        for x in 0..w {
-            // bloc accent centré avec marge → look "carré arrondi"
-            let inset = (x >= 4 && x < w - 4 && y >= 4 && y < h - 4) as usize;
-            let corner = ((x < 7 || x >= w - 7) && (y < 7 || y >= h - 7)) as usize;
-            let px = if inset == 1 && corner == 0 { ac } else { bg };
-            let i = (y * w + x) * 4;
-            rgba[i..i + 4].copy_from_slice(&px);
+    let bytes = include_bytes!("../../../assets/aegis.png");
+    match image::load_from_memory(bytes) {
+        Ok(img) => {
+            let img = img.to_rgba8();
+            let (w, h) = img.dimensions();
+            egui::IconData { rgba: img.into_raw(), width: w, height: h }
         }
+        Err(_) => egui::IconData { rgba: vec![0x7e, 0x97, 0xff, 0xff], width: 1, height: 1 },
     }
-    egui::IconData { rgba, width: w as u32, height: h as u32 }
 }
