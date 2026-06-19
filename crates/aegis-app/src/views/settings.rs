@@ -66,6 +66,16 @@ pub fn ui(app: &mut AegisApp, ui: &mut egui::Ui) {
             ui.add(egui::TextEdit::singleline(&mut app.e_thinking).desired_width(f32::INFINITY));
         });
 
+        ui.add_space(18.0);
+        kit::cap(ui, "System");
+        ui.add_space(8.0);
+        if ui.checkbox(&mut app.e_autostart, "Launch Aegis at Windows startup").changed() {
+            if let Err(e) = crate::autostart::set(app.e_autostart) {
+                app.save_msg = Some((format!("Autostart failed: {e}"), false));
+                app.e_autostart = crate::autostart::is_enabled(); // resynchronise sur l'état réel
+            }
+        }
+
         ui.add_space(16.0);
         ui.horizontal(|ui| {
             if kit::btn_accent(ui, "Save & test").clicked() {

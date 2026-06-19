@@ -50,6 +50,7 @@ pub struct AegisApp {
     pub e_thinking: String,
     pub mic_devices: Vec<String>,
     pub out_devices: Vec<String>,
+    pub e_autostart: bool, // démarrage auto Windows (HKCU\…\Run)
     pub save_msg: Option<(String, bool)>,
     // uploader : ajout de dossier
     pub new_dir: String,
@@ -128,6 +129,7 @@ impl AegisApp {
             e_thinking: cfg.thinking_reply.clone(),
             mic_devices: audio::input_devices(),
             out_devices: audio::output_devices(),
+            e_autostart: crate::autostart::is_enabled(),
             save_msg: None,
             new_dir: String::new(),
         }
