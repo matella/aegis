@@ -79,6 +79,7 @@
             />
 
         <MajorUpgrade
+            AllowSameVersionUpgrades='yes'
             Schedule='afterInstallInitialize'
             DowngradeErrorMessage='A newer version of [ProductName] is already installed. Setup will now exit.'/>
 
@@ -124,6 +125,29 @@
                     </Directory>
                 </Directory>
             </Directory>
+
+            <!-- Raccourcis menu Démarrer + Bureau vers l'exe installé (exe0). -->
+            <Directory Id='ProgramMenuFolder'>
+                <Directory Id='ApplicationProgramsFolder' Name='Aegis'>
+                    <Component Id='StartMenuShortcut' Guid='*'>
+                        <Shortcut Id='AppStartMenuShortcut' Name='Aegis'
+                            Description='Aegis operator console'
+                            Target='[#exe0]' WorkingDirectory='Bin'/>
+                        <RemoveFolder Id='RemoveApplicationProgramsFolder' On='uninstall'/>
+                        <RegistryValue Root='HKCU' Key='Software\Aegis' Name='startmenu'
+                            Type='integer' Value='1' KeyPath='yes'/>
+                    </Component>
+                </Directory>
+            </Directory>
+            <Directory Id='DesktopFolder' Name='Desktop'>
+                <Component Id='DesktopShortcut' Guid='*'>
+                    <Shortcut Id='AppDesktopShortcut' Name='Aegis'
+                        Description='Aegis operator console'
+                        Target='[#exe0]' WorkingDirectory='Bin'/>
+                    <RegistryValue Root='HKCU' Key='Software\Aegis' Name='desktop'
+                        Type='integer' Value='1' KeyPath='yes'/>
+                </Component>
+            </Directory>
         </Directory>
 
         <Feature
@@ -140,8 +164,10 @@
               the license sidecar file from the installer.
             -->
             <ComponentRef Id='License'/>
-            
+
             <ComponentRef Id='binary0'/>
+            <ComponentRef Id='StartMenuShortcut'/>
+            <ComponentRef Id='DesktopShortcut'/>
 
             <Feature
                 Id='Environment'
