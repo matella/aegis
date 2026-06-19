@@ -11,3 +11,20 @@ Design, plan & mockups live in [`docs/`](docs/): [`design.md`](docs/design.md) (
 
 Built in phases: **#1 Foundation** (shell + dashboard + uploader) → #2 Jarvis chat + actions →
 #3 voice ("hey Jarvis") → #4 satellite action catalog. All logic is TDD'd behind mockable traits.
+
+## Packaging (Windows MSI)
+
+The installer is built with [`cargo-wix`](https://github.com/volks73/cargo-wix) (WiX Toolset v3).
+The WiX source lives in [`crates/aegis-app/wix/main.wxs`](crates/aegis-app/wix/main.wxs).
+
+```powershell
+# one-time tooling (the WiX install needs admin rights):
+winget install WiXToolset.WiXToolset      # WiX Toolset v3.14 (candle/light)
+cargo install cargo-wix
+
+# build the MSI → target/wix/aegis-app-<version>-x86_64.msi
+cargo wix -p aegis-app --nocapture
+```
+
+The MSI is **unsigned** — Windows SmartScreen warns on first run ("More info → Run anyway").
+Signing would need a code-signing certificate (none configured).

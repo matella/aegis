@@ -2,6 +2,10 @@
 name = "aegis-app"
 version = "0.1.0"
 edition = "2021"
+description = "Aegis — native operator console for Jarvis and its satellites"
+authors = ["Matthieu Hella"]
+license = "MIT"
+repository = "https://github.com/matella/aegis"
 
 [[bin]]
 name = "aegis"
