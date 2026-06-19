@@ -20,11 +20,15 @@ pub fn spawn_poller(
 
             // Santé : Jarvis sur /health (gateway) ; storm-codex sur /api/health ; Orpheus sur
             // /api/auth/status.
-            let probes = [
+            let mut probes = vec![
                 ("Jarvis", snapshot.jarvis_url.as_str(), "/health"),
                 ("storm-codex", snapshot.storm_codex_url.as_str(), "/api/health"),
                 ("Orpheus", snapshot.orpheus_url.as_str(), "/api/auth/status"),
             ];
+            // HotsPatchNotes : sondé seulement s'il est configuré (racine = best-effort).
+            if let Some(hots) = snapshot.hots_patch_url.as_deref().filter(|s| !s.is_empty()) {
+                probes.push(("HotsPatchNotes", hots, "/"));
+            }
             let mut health = Vec::new();
             for (name, url, path) in probes {
                 let r = clients.probe(url, path).await;

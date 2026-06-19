@@ -24,6 +24,9 @@ pub fn ui(app: &mut AegisApp, ui: &mut egui::Ui) {
         field(ui, "Orpheus", |ui| {
             ui.add(egui::TextEdit::singleline(&mut app.e_orpheus).desired_width(f32::INFINITY));
         });
+        field(ui, "HotsPatchNotes (optionnel)", |ui| {
+            ui.add(egui::TextEdit::singleline(&mut app.e_hots).desired_width(f32::INFINITY));
+        });
         field(ui, "Upload token (storm-codex)", |ui| {
             ui.add(egui::TextEdit::singleline(&mut app.e_upload_token).password(true).desired_width(f32::INFINITY));
         });

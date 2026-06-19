@@ -21,11 +21,20 @@ pub struct ChatLink {
     pub url: String,
 }
 
+/// Artifact non-lien de Jarvis (`table | markdown | text | metric | auto | weather`) rendu dans
+/// la bulle : un tableau (colonnes/lignes) ou un corps texte dérivé de `data`.
+pub struct ArtifactCard {
+    pub title: String,
+    pub body: String,
+    pub table: Option<(Vec<String>, Vec<Vec<String>>)>,
+}
+
 #[derive(Default)]
 pub struct ChatMsg {
     pub role: String, // "you" | "jarvis"
     pub text: String,
     pub links: Vec<ChatLink>,
+    pub cards: Vec<ArtifactCard>,
     /// Action gated proposée par Jarvis (`route:"propose"`) → à confirmer. `intent_id` = l'intent
     /// en attente côté gateway ; on confirme/annule en renvoyant « confirm »/« reject » sur le /ws.
     pub proposal: bool,
@@ -66,6 +75,38 @@ fn resolve_url(cfg: &Config, app: &str, path: &str, url: Option<&str>) -> Option
         _ => return None,
     };
     Some(format!("{}{}", base.trim_end_matches('/'), path))
+}
+
+/// Rend une valeur JSON scalaire en texte court (cellules de tableau, valeurs).
+fn val_to_string(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => String::new(),
+        other => other.to_string(),
+    }
+}
+
+/// Corps texte d'un artifact non-tableau, dérivé de `data` : `text` > `value` > dump scalaire.
+/// Tronqué pour rester lisible dans la bulle de chat.
+fn artifact_body(data: Option<&serde_json::Value>) -> String {
+    let Some(d) = data else { return String::new() };
+    let raw = if let Some(t) = d.get("text").and_then(|x| x.as_str()) {
+        t.to_string()
+    } else if let Some(val) = d.get("value") {
+        match val {
+            serde_json::Value::String(s) => s.clone(),
+            other => serde_json::to_string_pretty(other).unwrap_or_default(),
+        }
+    } else if let Some(obj) = d.as_object() {
+        obj.iter()
+            .filter(|(_, v)| v.is_string() || v.is_number() || v.is_boolean())
+            .map(|(k, v)| format!("{k}: {}", val_to_string(v)))
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        String::new()
+    };
+    raw.chars().take(600).collect()
 }
 
 fn handle_frame(
@@ -118,33 +159,65 @@ fn handle_frame(
             let intent_id =
                 result.and_then(|r| r.get("intent_id")).and_then(|x| x.as_str()).map(str::to_string);
             let proposal = route == "propose" && intent_id.is_some();
-            // Actions : artifacts kind:"link" → résolus en URL ; `open:true` = ouverture auto.
+            // Artifacts : `link` → bouton (résolu en URL, `open:true` = ouverture auto) ; `table` →
+            // grille ; le reste (markdown/text/metric/auto/weather) → carte texte dérivée de `data`.
             let mut links = Vec::new();
+            let mut cards = Vec::new();
             let mut to_open = Vec::new();
             if let Some(arts) = result.and_then(|r| r.get("artifacts")).and_then(|a| a.as_array()) {
                 let cfg = cfg.lock().unwrap();
                 for a in arts {
-                    if a.get("kind").and_then(|k| k.as_str()) != Some("link") {
-                        continue;
-                    }
-                    let title = a.get("title").and_then(|t| t.as_str()).unwrap_or("Open").to_string();
+                    let kind = a.get("kind").and_then(|k| k.as_str()).unwrap_or("");
+                    let title = a.get("title").and_then(|t| t.as_str()).unwrap_or("").to_string();
                     let d = a.get("data");
-                    let app = d.and_then(|d| d.get("app")).and_then(|x| x.as_str()).unwrap_or("");
-                    let path = d.and_then(|d| d.get("path")).and_then(|x| x.as_str()).unwrap_or("");
-                    let url_field = d.and_then(|d| d.get("url")).and_then(|x| x.as_str());
-                    let open = d.and_then(|d| d.get("open")).and_then(|x| x.as_bool()).unwrap_or(false);
-                    if let Some(url) = resolve_url(&cfg, app, path, url_field) {
-                        if open {
-                            to_open.push(url.clone());
+                    match kind {
+                        "link" => {
+                            let t = if title.is_empty() { "Open".to_string() } else { title };
+                            let app = d.and_then(|d| d.get("app")).and_then(|x| x.as_str()).unwrap_or("");
+                            let path = d.and_then(|d| d.get("path")).and_then(|x| x.as_str()).unwrap_or("");
+                            let url_field = d.and_then(|d| d.get("url")).and_then(|x| x.as_str());
+                            let open = d.and_then(|d| d.get("open")).and_then(|x| x.as_bool()).unwrap_or(false);
+                            if let Some(url) = resolve_url(&cfg, app, path, url_field) {
+                                if open {
+                                    to_open.push(url.clone());
+                                }
+                                links.push(ChatLink { title: t, url });
+                            }
                         }
-                        links.push(ChatLink { title, url });
+                        "table" => {
+                            let cols = d
+                                .and_then(|d| d.get("columns"))
+                                .and_then(|c| c.as_array())
+                                .map(|a| a.iter().map(val_to_string).collect::<Vec<_>>())
+                                .unwrap_or_default();
+                            let rows = d
+                                .and_then(|d| d.get("rows"))
+                                .and_then(|r| r.as_array())
+                                .map(|rows| {
+                                    rows.iter()
+                                        .take(30) // garde-fou : pas de tableau géant dans le chat
+                                        .filter_map(|row| row.as_array())
+                                        .map(|row| row.iter().map(val_to_string).collect())
+                                        .collect::<Vec<Vec<String>>>()
+                                })
+                                .unwrap_or_default();
+                            if !cols.is_empty() || !rows.is_empty() {
+                                cards.push(ArtifactCard { title, body: String::new(), table: Some((cols, rows)) });
+                            }
+                        }
+                        _ => {
+                            let body = artifact_body(d);
+                            if !body.is_empty() || !title.is_empty() {
+                                cards.push(ArtifactCard { title, body, table: None });
+                            }
+                        }
                     }
                 }
             }
             {
                 let mut s = state.lock().unwrap();
-                if !msg.is_empty() || !links.is_empty() {
-                    s.messages.push(ChatMsg { role: "jarvis".into(), text: msg, links, proposal, intent_id });
+                if !msg.is_empty() || !links.is_empty() || !cards.is_empty() {
+                    s.messages.push(ChatMsg { role: "jarvis".into(), text: msg, links, cards, proposal, intent_id });
                 }
                 s.thinking = false;
             }

@@ -123,7 +123,38 @@ fn chat_line(ui: &mut egui::Ui, m: &ChatMsg, live: bool) -> Option<&'static str>
                 .corner_radius(egui::CornerRadius::same(8))
                 .inner_margin(egui::Margin::symmetric(11, 8))
                 .show(ui, |ui| {
-                    ui.label(egui::RichText::new(&m.text).color(TEXT));
+                    if !m.text.is_empty() {
+                        ui.label(egui::RichText::new(&m.text).color(TEXT));
+                    }
+                    // Artifacts non-lien (tableau / texte / metric…) → cartes dans la bulle.
+                    for (ci, c) in m.cards.iter().enumerate() {
+                        ui.add_space(6.0);
+                        if !c.title.is_empty() {
+                            kit::cap(ui, &c.title);
+                            ui.add_space(2.0);
+                        }
+                        if let Some((cols, rows)) = &c.table {
+                            ui.push_id(ci, |ui| {
+                                egui::Grid::new("tbl").striped(true).spacing([12.0, 4.0]).show(ui, |ui| {
+                                    for col in cols {
+                                        ui.label(egui::RichText::new(col).size(10.0).color(DIM));
+                                    }
+                                    if !cols.is_empty() {
+                                        ui.end_row();
+                                    }
+                                    for row in rows {
+                                        for cell in row {
+                                            let short: String = cell.chars().take(60).collect();
+                                            ui.label(egui::RichText::new(short).size(11.0).color(TEXT));
+                                        }
+                                        ui.end_row();
+                                    }
+                                });
+                            });
+                        } else if !c.body.is_empty() {
+                            ui.label(egui::RichText::new(&c.body).color(TEXT));
+                        }
+                    }
                     // Liens d'action (Jarvis a proposé/ouvert une page) → boutons.
                     for link in &m.links {
                         ui.add_space(4.0);
