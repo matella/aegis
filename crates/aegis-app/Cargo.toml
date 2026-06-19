@@ -30,6 +30,7 @@ futures-util = "0.3"
 cpal = "0.15"
 rodio = "0.19"
 base64 = "0.22"
+notify-rust = "4" # notifications bureau (service down/recovered)
 
 # Pilotage fenêtre bas-niveau (show/hide tray fiable) — Windows uniquement.
 [target.'cfg(windows)'.dependencies]

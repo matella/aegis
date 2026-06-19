@@ -3,9 +3,32 @@
 use crate::app::DashboardData;
 use aegis_client::http::HttpClients;
 use aegis_client::{GpuClient, HealthClient, MusicClient};
-use aegis_core::{Config, ServiceHealth};
+use aegis_core::{Config, ServiceHealth, ServiceStatus};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+/// Notifie (toast bureau) un changement up↔down d'un service par rapport au tick précédent.
+/// Le premier tick sert de référence (pas d'alerte au démarrage).
+fn alert_transitions(prev: &mut HashMap<String, ServiceStatus>, health: &[ServiceHealth]) {
+    let first = prev.is_empty();
+    for h in health {
+        let was = prev.insert(h.name.clone(), h.status.clone());
+        if first {
+            continue;
+        }
+        let down_now = h.status == ServiceStatus::Down;
+        let was_down = was == Some(ServiceStatus::Down);
+        let (changed, body) = match (was_down, down_now) {
+            (false, true) => (true, format!("{} is down", h.name)),
+            (true, false) if h.status == ServiceStatus::Up => (true, format!("{} recovered", h.name)),
+            _ => (false, String::new()),
+        };
+        if changed {
+            let _ = notify_rust::Notification::new().summary("Aegis").body(&body).show();
+        }
+    }
+}
 
 pub fn spawn_poller(
     rt: tokio::runtime::Handle,
@@ -14,6 +37,7 @@ pub fn spawn_poller(
     ctx: egui::Context,
 ) {
     rt.spawn(async move {
+        let mut prev_status: HashMap<String, ServiceStatus> = HashMap::new();
         loop {
             let snapshot = cfg.lock().unwrap().clone();
             let clients = HttpClients::new(&snapshot);
@@ -35,6 +59,8 @@ pub fn spawn_poller(
                 let lat = r.clone().unwrap_or(0);
                 health.push(ServiceHealth::from_probe(name, r.map(|_| ()), lat));
             }
+
+            alert_transitions(&mut prev_status, &health);
 
             let gpu = clients.gpu().await;
             let now = clients.now_playing().await.unwrap_or_default();

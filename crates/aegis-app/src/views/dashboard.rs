@@ -169,6 +169,11 @@ fn quick_actions_card(ui: &mut egui::Ui, cfg: &aegis_core::Config) {
             if ui.button("Patch notes ↗").clicked() {
                 let _ = open::that(format!("{}/patches", cfg.storm_codex_url.trim_end_matches('/')));
             }
+            if let Some(url) = cfg.homelab_url.as_deref().filter(|s| !s.is_empty()) {
+                if ui.button("Homelab ↗").clicked() {
+                    let _ = open::that(url);
+                }
+            }
         });
         ui.add_space(8.0);
         ui.label(

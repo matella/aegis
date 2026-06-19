@@ -17,6 +17,8 @@ pub struct ConfigFile {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hots_patch_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub homelab_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub upload_token: Option<String>,
     // Voix : périphériques choisis (par nom cpal ; None = défaut système) + phrases d'accusé.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -37,6 +39,8 @@ pub struct Config {
     pub orpheus_url: String,
     /// URL du service HotsPatchNotes (optionnel) — sondé sur le Dashboard si défini.
     pub hots_patch_url: Option<String>,
+    /// URL du dashboard homelab (Homepage) — bouton d'accès rapide si défini.
+    pub homelab_url: Option<String>,
     pub upload_token: Option<String>,
     pub mic_device: Option<String>,
     pub output_device: Option<String>,
@@ -63,6 +67,7 @@ impl Config {
             storm_codex_url: pick("AEGIS_STORM_URL", file.storm_codex_url, Self::DEFAULT_STORM),
             orpheus_url: pick("AEGIS_ORPHEUS_URL", file.orpheus_url, Self::DEFAULT_ORPHEUS),
             hots_patch_url: opt("AEGIS_HOTS_URL", file.hots_patch_url),
+            homelab_url: opt("AEGIS_HOMELAB_URL", file.homelab_url),
             upload_token: opt("AEGIS_UPLOAD_TOKEN", file.upload_token),
             mic_device: opt("AEGIS_MIC", file.mic_device),
             output_device: opt("AEGIS_OUTPUT", file.output_device),
@@ -96,6 +101,7 @@ impl Config {
             storm_codex_url: trim(&self.storm_codex_url),
             orpheus_url: trim(&self.orpheus_url),
             hots_patch_url: self.hots_patch_url.clone().filter(|s| !s.trim().is_empty()),
+            homelab_url: self.homelab_url.clone().filter(|s| !s.trim().is_empty()),
             upload_token: self.upload_token.clone().filter(|s| !s.trim().is_empty()),
             mic_device: self.mic_device.clone().filter(|s| !s.trim().is_empty()),
             output_device: self.output_device.clone().filter(|s| !s.trim().is_empty()),
