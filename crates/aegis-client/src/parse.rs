@@ -54,10 +54,20 @@ pub fn parse_now_playing(body: &str) -> Result<NowPlaying, String> {
                 .join(", ")
         })
         .filter(|s| !s.is_empty());
+    // Pochette : `track.album.images` (Spotify, du plus grand au plus petit). La vignette fait
+    // ~46px → la plus petite image (dernière) suffit et économise la bande passante.
+    let cover_url = track
+        .and_then(|t| t.get("album"))
+        .and_then(|al| al.get("images"))
+        .and_then(Value::as_array)
+        .and_then(|imgs| {
+            imgs.iter().rev().find_map(|im| im.get("url").and_then(Value::as_str)).map(str::to_string)
+        });
     Ok(NowPlaying {
         playing: authed && is_playing && title.is_some(),
         title,
         artist,
+        cover_url,
     })
 }
 
@@ -81,6 +91,8 @@ mod tests {
         assert!(np.playing);
         assert_eq!(np.title.as_deref(), Some("California Gurls"));
         assert_eq!(np.artist.as_deref(), Some("Katy Perry, Snoop Dogg"));
+        // Pochette : on retient la plus petite image (dernière du tableau).
+        assert_eq!(np.cover_url.as_deref(), Some("https://i.scdn.co/image/small"));
     }
 
     #[test]

@@ -13,6 +13,9 @@ aegis-client = { path = "../aegis-client" }
 aegis-uploader = { path = "../aegis-uploader" }
 eframe = { version = "0.31", features = ["persistence"] }
 egui = "0.31"
+# Chargement d'images distantes (pochette now-playing) : loader URL + décodage JPEG/PNG.
+egui_extras = { version = "0.31", features = ["image", "http"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 tokio = { version = "1", features = ["full"] }
 tray-icon = "0.19"
 open = "5"

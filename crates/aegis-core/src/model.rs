@@ -81,6 +81,8 @@ pub struct NowPlaying {
     pub playing: bool,
     pub title: Option<String>,
     pub artist: Option<String>,
+    /// URL de la pochette d'album (Spotify `track.album.images`), si disponible.
+    pub cover_url: Option<String>,
 }
 
 #[cfg(test)]

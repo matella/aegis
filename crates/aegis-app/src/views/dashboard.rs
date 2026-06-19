@@ -110,18 +110,25 @@ fn now_playing_card(ui: &mut egui::Ui, now: &aegis_core::NowPlaying) {
     kit::card_titled(ui, "Now playing", |ui| {
         if now.playing {
             ui.horizontal(|ui| {
-                // Pochette : carré façon mockup + note de musique centrée (pas d'URL de cover
-                // dans NowPlaying → glyphe emoji 🎵, rendu par la police egui).
-                let (rect, _) =
-                    ui.allocate_exact_size(egui::vec2(46.0, 46.0), egui::Sense::hover());
-                let p = ui.painter();
-                p.rect_filled(rect, egui::CornerRadius::same(6), egui::Color32::from_rgb(0x47, 0x3a, 0x6b));
-                let note = p.layout_no_wrap(
-                    "🎵".to_owned(),
-                    egui::FontId::proportional(24.0),
-                    egui::Color32::WHITE,
-                );
-                p.galley(rect.center() - note.size() / 2.0, note, egui::Color32::WHITE);
+                // Pochette : image distante (Spotify) si dispo, sinon carré + note 🎵.
+                let sz = egui::vec2(46.0, 46.0);
+                match &now.cover_url {
+                    Some(url) => {
+                        ui.add(
+                            egui::Image::new(url)
+                                .fit_to_exact_size(sz)
+                                .corner_radius(6)
+                                .bg_fill(egui::Color32::from_rgb(0x47, 0x3a, 0x6b)),
+                        );
+                    }
+                    None => {
+                        let (rect, _) = ui.allocate_exact_size(sz, egui::Sense::hover());
+                        let p = ui.painter();
+                        p.rect_filled(rect, egui::CornerRadius::same(6), egui::Color32::from_rgb(0x47, 0x3a, 0x6b));
+                        let note = p.layout_no_wrap("🎵".to_owned(), egui::FontId::proportional(24.0), egui::Color32::WHITE);
+                        p.galley(rect.center() - note.size() / 2.0, note, egui::Color32::WHITE);
+                    }
+                }
                 ui.add_space(4.0);
                 ui.vertical(|ui| {
                     ui.label(

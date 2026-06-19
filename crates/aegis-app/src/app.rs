@@ -58,6 +58,7 @@ impl AegisApp {
     pub fn new(cc: &eframe::CreationContext<'_>, rt: tokio::runtime::Handle, cfg: Config) -> Self {
         let ctx = cc.egui_ctx.clone();
         crate::theme::apply(&ctx); // thème dark Aegis
+        egui_extras::install_image_loaders(&ctx); // pochette now-playing (URL → texture)
 
         // État uploader (serveur/token = config Aegis ; dossiers + uploaded depuis le disque).
         let dirs = aegis_uploader::settings::load_dirs();
