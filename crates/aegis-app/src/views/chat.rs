@@ -3,7 +3,7 @@ use crate::app::AegisApp;
 use crate::audio;
 use crate::chat::{ChatMsg, Outbound};
 use crate::kit;
-use crate::theme::{ACCENT, DIM, LINE, PANEL2, TEXT};
+use crate::theme::{ACCENT, AMBER, DIM, LINE, PANEL2, TEXT};
 use crate::views::{GREEN, RED};
 
 pub fn ui(app: &mut AegisApp, ui: &mut egui::Ui) {
@@ -59,7 +59,7 @@ pub fn ui(app: &mut AegisApp, ui: &mut egui::Ui) {
                 app.chat_input.clear();
                 {
                     let mut s = app.chat.lock().unwrap();
-                    s.messages.push(ChatMsg { role: "you".into(), text: text.clone(), links: Vec::new() });
+                    s.messages.push(ChatMsg { role: "you".into(), text: text.clone(), ..Default::default() });
                     s.thinking = true;
                 }
                 let _ = app.chat_tx.send(Outbound::Text(text));
@@ -69,7 +69,9 @@ pub fn ui(app: &mut AegisApp, ui: &mut egui::Ui) {
         ui.add_space(6.0);
     });
 
-    egui::ScrollArea::vertical()
+    // Le rendu peut produire une décision de confirmation (Confirm/Reject d'une action gated).
+    // On la collecte pendant le rendu (verrou tenu) puis on l'envoie après libération du verrou.
+    let decision = egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .stick_to_bottom(true)
         .show(ui, |ui| {
@@ -78,19 +80,40 @@ pub fn ui(app: &mut AegisApp, ui: &mut egui::Ui) {
                 ui.add_space(8.0);
                 kit::dim(ui, "Ask Jarvis anything…");
             }
-            for m in &s.messages {
-                chat_line(ui, m);
+            let last = s.messages.len().saturating_sub(1);
+            let mut decision: Option<&'static str> = None;
+            for (i, m) in s.messages.iter().enumerate() {
+                // Seule la dernière proposition est « live » (le pending côté gateway).
+                if let Some(d) = chat_line(ui, m, i == last) {
+                    decision = Some(d);
+                }
                 ui.add_space(8.0);
             }
             if s.thinking {
                 ui.label(egui::RichText::new("jarvis is thinking…").color(DIM).italics());
             }
-        });
+            decision
+        })
+        .inner;
+
+    // Confirm/Reject → on renvoie « confirm »/« reject » sur le /ws (mots affirmatif/négatif que
+    // la gateway mappe sur l'intent en attente), comme une réponse vocale.
+    if let Some(word) = decision {
+        {
+            let mut s = app.chat.lock().unwrap();
+            s.messages.push(ChatMsg { role: "you".into(), text: word.into(), ..Default::default() });
+            s.thinking = true;
+        }
+        let _ = app.chat_tx.send(Outbound::Text(word.into()));
+    }
 }
 
-/// Une ligne de chat : libellé locuteur (mono, largeur fixe) + bulle de texte.
-fn chat_line(ui: &mut egui::Ui, m: &ChatMsg) {
+/// Une ligne de chat : libellé locuteur (mono, largeur fixe) + bulle de texte. Pour une action
+/// gated proposée (`m.proposal`) et « live » (`live`), affiche une rangée de confirmation ambre et
+/// renvoie « confirm »/« reject » si l'opérateur clique.
+fn chat_line(ui: &mut egui::Ui, m: &ChatMsg, live: bool) -> Option<&'static str> {
     let who = if m.role == "you" { "you" } else { "jarvis" };
+    let mut decision = None;
     ui.horizontal_top(|ui| {
         ui.add_sized([54.0, 18.0], egui::Label::new(kit::mono(who, ACCENT)));
         ui.vertical(|ui| {
@@ -109,6 +132,28 @@ fn chat_line(ui: &mut egui::Ui, m: &ChatMsg) {
                         }
                     }
                 });
+            // Action gated : rangée de confirmation (bordure ambre, façon mockup #4).
+            if m.proposal && live {
+                ui.add_space(6.0);
+                egui::Frame::new()
+                    .stroke(egui::Stroke::new(1.0, AMBER.gamma_multiply(0.6)))
+                    .corner_radius(egui::CornerRadius::same(7))
+                    .inner_margin(egui::Margin::symmetric(11, 7))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("⚠ confirmation requise").size(11.0).color(AMBER));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.button("Reject").clicked() {
+                                    decision = Some("reject");
+                                }
+                                if kit::btn_accent(ui, "Confirm").clicked() {
+                                    decision = Some("confirm");
+                                }
+                            });
+                        });
+                    });
+            }
         });
     });
+    decision
 }

@@ -21,10 +21,16 @@ pub struct ChatLink {
     pub url: String,
 }
 
+#[derive(Default)]
 pub struct ChatMsg {
     pub role: String, // "you" | "jarvis"
     pub text: String,
     pub links: Vec<ChatLink>,
+    /// Action gated proposée par Jarvis (`route:"propose"`) → à confirmer. `intent_id` = l'intent
+    /// en attente côté gateway ; on confirme/annule en renvoyant « confirm »/« reject » sur le /ws.
+    pub proposal: bool,
+    #[allow(dead_code)] // tracé pour debug / futur appel REST ; la confirmation passe par le chat
+    pub intent_id: Option<String>,
 }
 
 #[derive(Default)]
@@ -84,7 +90,7 @@ fn handle_frame(
             if let Some(t) = v.get("text").and_then(|t| t.as_str()).filter(|t| !t.is_empty()) {
                 {
                     let mut s = state.lock().unwrap();
-                    s.messages.push(ChatMsg { role: "you".into(), text: t.to_string(), links: Vec::new() });
+                    s.messages.push(ChatMsg { role: "you".into(), text: t.to_string(), ..Default::default() });
                     s.thinking = true;
                     s.wake = false;
                 }
@@ -107,6 +113,11 @@ fn handle_frame(
                 .and_then(|m| m.as_str())
                 .unwrap_or("")
                 .to_string();
+            // Action gated proposée (`route:"propose"` + intent_id) → à confirmer dans l'UI.
+            let route = result.and_then(|r| r.get("route")).and_then(|x| x.as_str()).unwrap_or("");
+            let intent_id =
+                result.and_then(|r| r.get("intent_id")).and_then(|x| x.as_str()).map(str::to_string);
+            let proposal = route == "propose" && intent_id.is_some();
             // Actions : artifacts kind:"link" → résolus en URL ; `open:true` = ouverture auto.
             let mut links = Vec::new();
             let mut to_open = Vec::new();
@@ -133,7 +144,7 @@ fn handle_frame(
             {
                 let mut s = state.lock().unwrap();
                 if !msg.is_empty() || !links.is_empty() {
-                    s.messages.push(ChatMsg { role: "jarvis".into(), text: msg, links });
+                    s.messages.push(ChatMsg { role: "jarvis".into(), text: msg, links, proposal, intent_id });
                 }
                 s.thinking = false;
             }
@@ -149,7 +160,7 @@ fn handle_frame(
                     .filter_map(|m| {
                         let role = m.get("role")?.as_str()?.to_string();
                         let text = m.get("content")?.as_str()?.to_string();
-                        (!text.is_empty()).then_some(ChatMsg { role, text, links: Vec::new() })
+                        (!text.is_empty()).then_some(ChatMsg { role, text, ..Default::default() })
                     })
                     .collect();
             }
