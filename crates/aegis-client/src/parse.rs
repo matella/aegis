@@ -1,7 +1,34 @@
 //! Parseurs PURS des réponses du box → types aegis-core. Tolérants (champs manquants) et testés sur
 //! des fixtures capturées en réel. C'est le point de régression n°1 → verrouillé par les tests.
-use aegis_core::{GpuState, NowPlaying, ResidentModel};
+use aegis_core::{GpuState, NowPlaying, ResidentModel, TorrentItem, Torrents};
 use serde_json::Value;
+
+/// `/api/torrents` du gateway (snapshot qBittorrent : `{downloading, seeding, dl_speed, up_speed,
+/// items:[{name, progress, dl_speed}]}`). Tolérant aux champs manquants.
+pub fn parse_torrents(body: &str) -> Result<Torrents, String> {
+    let v: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+    let u = |x: Option<&Value>| x.and_then(Value::as_u64).unwrap_or(0);
+    let items = v
+        .get("items")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .map(|t| TorrentItem {
+                    name: t.get("name").and_then(Value::as_str).unwrap_or("").to_string(),
+                    progress: t.get("progress").and_then(Value::as_f64).unwrap_or(0.0) as f32,
+                    dl_speed: t.get("dl_speed").and_then(Value::as_u64).unwrap_or(0),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(Torrents {
+        downloading: u(v.get("downloading")) as u32,
+        seeding: u(v.get("seeding")) as u32,
+        dl_speed: u(v.get("dl_speed")),
+        up_speed: u(v.get("up_speed")),
+        items,
+    })
+}
 
 /// `/api/gpu` de la gateway Jarvis → `GpuState`. Forme :
 /// `{reachable, resident:[{model,vram_gib,size_gib,processor,expires_in_s}], model_count, vram_held_gib}`.
@@ -114,6 +141,18 @@ mod tests {
         let np = parse_now_playing(body).unwrap();
         assert!(np.playing);
         assert_eq!(np.title.as_deref(), Some("X"));
+    }
+
+    #[test]
+    fn parses_torrents_snapshot() {
+        let body = r#"{"total":5,"downloading":2,"seeding":3,"dl_speed":1048576,"up_speed":2048,
+            "items":[{"name":"Foo","state":"downloading","progress":0.42,"dl_speed":1048576}]}"#;
+        let t = parse_torrents(body).unwrap();
+        assert_eq!(t.downloading, 2);
+        assert_eq!(t.seeding, 3);
+        assert_eq!(t.dl_speed, 1048576);
+        assert_eq!(t.items.len(), 1);
+        assert!((t.items[0].progress - 0.42).abs() < 0.001);
     }
 
     #[test]

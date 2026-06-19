@@ -3,7 +3,7 @@
 pub mod http;
 pub mod parse;
 
-use aegis_core::{GpuState, NowPlaying};
+use aegis_core::{GpuState, NowPlaying, Torrents};
 use async_trait::async_trait;
 
 /// Sonde de santé d'un service → latence en ms (Err = down).
@@ -23,6 +23,12 @@ pub trait GpuClient: Send + Sync {
 #[async_trait]
 pub trait MusicClient: Send + Sync {
     async fn now_playing(&self) -> Result<NowPlaying, String>;
+}
+
+/// Snapshot des téléchargements (gateway Jarvis `/api/torrents` → qBittorrent).
+#[async_trait]
+pub trait TorrentsClient: Send + Sync {
+    async fn torrents(&self) -> Result<Torrents, String>;
 }
 
 // ── Mocks (pour les tests de la logique dashboard/poller, sans réseau) ──────────────────────────

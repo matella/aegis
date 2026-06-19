@@ -20,11 +20,58 @@ pub fn ui(app: &mut AegisApp, ui: &mut egui::Ui) {
     });
     ui.add_space(12.0);
     let now = d.now.clone();
+    let torrents = d.torrents.clone();
     drop(d);
     let cfg = app.cfg.lock().unwrap().clone();
     ui.columns(2, |c| {
         now_playing_card(&mut c[0], &now);
         quick_actions_card(&mut c[1], &cfg);
+    });
+
+    // Carte torrents : seulement si le gateway a renvoyé un snapshot (qBittorrent configuré).
+    if let Some(t) = &torrents {
+        ui.add_space(12.0);
+        torrents_card(ui, t);
+    }
+}
+
+fn fmt_speed(bytes_per_s: u64) -> String {
+    let b = bytes_per_s as f64;
+    if b >= 1_048_576.0 {
+        format!("{:.1} MB/s", b / 1_048_576.0)
+    } else if b >= 1024.0 {
+        format!("{:.0} KB/s", b / 1024.0)
+    } else {
+        format!("{b:.0} B/s")
+    }
+}
+
+fn torrents_card(ui: &mut egui::Ui, t: &aegis_core::Torrents) {
+    kit::card_titled(ui, "Torrents", |ui| {
+        ui.horizontal(|ui| {
+            kit::stat(ui, "↓ down", &fmt_speed(t.dl_speed));
+            ui.add_space(24.0);
+            kit::stat(ui, "↑ up", &fmt_speed(t.up_speed));
+            ui.add_space(24.0);
+            kit::stat(ui, "downloading", &t.downloading.to_string());
+            ui.add_space(24.0);
+            kit::stat(ui, "seeding", &t.seeding.to_string());
+        });
+        for it in t.items.iter().take(5) {
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                let name: String = it.name.chars().take(48).collect();
+                ui.label(egui::RichText::new(name).size(11.0).color(TEXT));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(kit::mono(format!("{:.0}%  {}", it.progress * 100.0, fmt_speed(it.dl_speed)), DIM));
+                });
+            });
+            ui.add_space(2.0);
+            kit::gauge(ui, it.progress, ACCENT);
+        }
+        if t.items.is_empty() {
+            kit::dim(ui, "no active downloads");
+        }
     });
 }
 

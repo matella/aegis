@@ -2,7 +2,7 @@
 //! Relit la config à chaque tick (les changements de Settings prennent effet en direct).
 use crate::app::DashboardData;
 use aegis_client::http::HttpClients;
-use aegis_client::{GpuClient, HealthClient, MusicClient};
+use aegis_client::{GpuClient, HealthClient, MusicClient, TorrentsClient};
 use aegis_core::{Config, ServiceHealth, ServiceStatus};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -64,10 +64,12 @@ pub fn spawn_poller(
 
             let gpu = clients.gpu().await;
             let now = clients.now_playing().await.unwrap_or_default();
+            let torrents = clients.torrents().await.ok();
 
             {
                 let mut d = dash.lock().unwrap();
                 d.health = health;
+                d.torrents = torrents;
                 match gpu {
                     Ok(g) => {
                         d.gpu = Some(g);

@@ -76,6 +76,24 @@ impl GpuState {
     }
 }
 
+/// Un torrent actif (sous-ensemble du snapshot qBittorrent du gateway Jarvis `/api/torrents`).
+#[derive(Debug, Clone)]
+pub struct TorrentItem {
+    pub name: String,
+    pub progress: f32, // 0..1
+    pub dl_speed: u64, // octets/s
+}
+
+/// Snapshot des téléchargements (gateway `/api/torrents` → qBittorrent).
+#[derive(Debug, Clone, Default)]
+pub struct Torrents {
+    pub downloading: u32,
+    pub seeding: u32,
+    pub dl_speed: u64, // octets/s
+    pub up_speed: u64,
+    pub items: Vec<TorrentItem>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct NowPlaying {
     pub playing: bool,

@@ -1,8 +1,8 @@
 //! Impls reqwest des traits clients (le seul code réseau). Pas de test unitaire (réseau) — couvert
 //! par la checklist de run manuel ; la logique (chemins, mapping d'erreurs) reste triviale.
-use crate::parse::{parse_gpu, parse_now_playing};
-use crate::{GpuClient, HealthClient, MusicClient};
-use aegis_core::{Config, GpuState, NowPlaying};
+use crate::parse::{parse_gpu, parse_now_playing, parse_torrents};
+use crate::{GpuClient, HealthClient, MusicClient, TorrentsClient};
+use aegis_core::{Config, GpuState, NowPlaying, Torrents};
 use async_trait::async_trait;
 use std::time::{Duration, Instant};
 
@@ -84,5 +84,21 @@ impl MusicClient for HttpClients {
             .await
             .map_err(|e| e.to_string())?;
         parse_now_playing(&body)
+    }
+}
+
+#[async_trait]
+impl TorrentsClient for HttpClients {
+    async fn torrents(&self) -> Result<Torrents, String> {
+        let mut req = self.http.get(format!("{}/api/torrents", self.jarvis_url));
+        if let Some(tok) = &self.jarvis_token {
+            req = req.bearer_auth(tok);
+        }
+        let res = req.send().await.map_err(|e| e.to_string())?;
+        if !res.status().is_success() {
+            return Err(format!("HTTP {}", res.status().as_u16()));
+        }
+        let body = res.text().await.map_err(|e| e.to_string())?;
+        parse_torrents(&body)
     }
 }

@@ -126,6 +126,15 @@ pub fn hairline(ui: &mut Ui) {
     ui.painter().hline(rect.x_range(), rect.center().y, Stroke::new(1.0, LINE));
 }
 
+/// Tuile de statistique : libellé « cap » + grande valeur en chasse fixe.
+pub fn stat(ui: &mut Ui, label: &str, value: &str) {
+    ui.vertical(|ui| {
+        cap(ui, label);
+        ui.add_space(2.0);
+        ui.label(RichText::new(value).font(FontId::monospace(15.0)).color(TEXT));
+    });
+}
+
 /// Pastille d'état `.led` : cercle plein + léger halo. Remplace le glyphe « ● » (absent de la police
 /// egui → rendu en tofu). Aligné verticalement sur la hauteur du texte courant.
 pub fn led(ui: &mut Ui, color: Color32) {

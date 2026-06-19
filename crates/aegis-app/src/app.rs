@@ -1,6 +1,6 @@
 //! AegisApp : état partagé + boucle egui. Logique métier dans aegis-core/client ; ici, du câblage.
 use crate::{audio, chat, poll, theme, tray, views, window};
-use aegis_core::{Config, GpuState, NowPlaying, ServiceHealth};
+use aegis_core::{Config, GpuState, NowPlaying, ServiceHealth, Torrents};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -11,6 +11,8 @@ pub struct DashboardData {
     pub gpu: Option<GpuState>,
     pub gpu_error: Option<String>,
     pub now: NowPlaying,
+    /// Snapshot torrents (None = endpoint indisponible / qBittorrent non configuré → carte masquée).
+    pub torrents: Option<Torrents>,
 }
 
 #[derive(PartialEq, Clone, Copy)]
