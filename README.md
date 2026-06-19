@@ -22,9 +22,12 @@ The WiX source lives in [`crates/aegis-app/wix/main.wxs`](crates/aegis-app/wix/m
 winget install WiXToolset.WiXToolset      # WiX Toolset v3.14 (candle/light)
 cargo install cargo-wix
 
-# build the MSI → target/wix/aegis-app-<version>-x86_64.msi
-cargo wix -p aegis-app --nocapture
+# build the MSI → target/wix/Aegis-<version>-x86_64.msi
+pwsh -File package.ps1
 ```
+
+`package.ps1` locates WiX, builds the release binary, and runs `cargo wix` from the package
+directory (needed in a workspace so the wxs's package-relative paths resolve).
 
 The MSI is **unsigned** — Windows SmartScreen warns on first run ("More info → Run anyway").
 Signing would need a code-signing certificate (none configured).
