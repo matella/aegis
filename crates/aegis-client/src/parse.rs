@@ -1,7 +1,22 @@
 //! Parseurs PURS des réponses du box → types aegis-core. Tolérants (champs manquants) et testés sur
 //! des fixtures capturées en réel. C'est le point de régression n°1 → verrouillé par les tests.
-use aegis_core::{GpuState, NowPlaying, ResidentModel, TorrentItem, Torrents};
+use aegis_core::{Container, GpuState, NowPlaying, ResidentModel, TorrentItem, Torrents};
 use serde_json::Value;
+
+/// `/api/containers` du gateway : `{containers:[{name, state, status}]}` (dérivé de `docker ps`).
+pub fn parse_containers(body: &str) -> Result<Vec<Container>, String> {
+    let v: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+    let arr = v.get("containers").and_then(Value::as_array).ok_or("no `containers` field")?;
+    Ok(arr
+        .iter()
+        .map(|c| Container {
+            name: c.get("name").and_then(Value::as_str).unwrap_or("").to_string(),
+            state: c.get("state").and_then(Value::as_str).unwrap_or("").to_string(),
+            status: c.get("status").and_then(Value::as_str).unwrap_or("").to_string(),
+        })
+        .filter(|c| !c.name.is_empty())
+        .collect())
+}
 
 /// `/api/torrents` du gateway (snapshot qBittorrent : `{downloading, seeding, dl_speed, up_speed,
 /// items:[{name, progress, dl_speed}]}`). Tolérant aux champs manquants.
@@ -141,6 +156,17 @@ mod tests {
         let np = parse_now_playing(body).unwrap();
         assert!(np.playing);
         assert_eq!(np.title.as_deref(), Some("X"));
+    }
+
+    #[test]
+    fn parses_containers() {
+        let body = r#"{"containers":[
+            {"name":"storm-codex","state":"running","status":"Up 3 days"},
+            {"name":"old","state":"exited","status":"Exited (0) 2 hours ago"}]}"#;
+        let c = parse_containers(body).unwrap();
+        assert_eq!(c.len(), 2);
+        assert!(c[0].up());
+        assert!(!c[1].up());
     }
 
     #[test]

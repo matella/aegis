@@ -11,28 +11,60 @@ use aegis_core::{GpuState, ServiceStatus};
 pub fn ui(app: &mut AegisApp, ui: &mut egui::Ui) {
     super::header(ui, "Overview", "auto-refresh 5s");
 
-    let d = app.dash.lock().unwrap();
+    // Dashboard scrollable : le nombre de cartes (services, GPU, now-playing, actions, torrents,
+    // conteneurs) peut dépasser la hauteur de la fenêtre.
+    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+        let d = app.dash.lock().unwrap();
 
-    // Grille 2×2 du mockup : Services | GPU, puis Now playing | Quick actions.
-    ui.columns(2, |c| {
-        services_card(&mut c[0], &d.health);
-        gpu_card(&mut c[1], app, &d);
-    });
-    ui.add_space(12.0);
-    let now = d.now.clone();
-    let torrents = d.torrents.clone();
-    drop(d);
-    let cfg = app.cfg.lock().unwrap().clone();
-    ui.columns(2, |c| {
-        now_playing_card(&mut c[0], &now);
-        quick_actions_card(&mut c[1], &cfg);
-    });
-
-    // Carte torrents : seulement si le gateway a renvoyé un snapshot (qBittorrent configuré).
-    if let Some(t) = &torrents {
+        // Grille 2×2 du mockup : Services | GPU, puis Now playing | Quick actions.
+        ui.columns(2, |c| {
+            services_card(&mut c[0], &d.health);
+            gpu_card(&mut c[1], app, &d);
+        });
         ui.add_space(12.0);
-        torrents_card(ui, t);
-    }
+        let now = d.now.clone();
+        let torrents = d.torrents.clone();
+        let containers = d.containers.clone();
+        drop(d);
+        let cfg = app.cfg.lock().unwrap().clone();
+        ui.columns(2, |c| {
+            now_playing_card(&mut c[0], &now);
+            quick_actions_card(&mut c[1], &cfg);
+        });
+
+        // Carte torrents : seulement si le gateway a renvoyé un snapshot (qBittorrent configuré).
+        if let Some(t) = &torrents {
+            ui.add_space(12.0);
+            torrents_card(ui, t);
+        }
+        // Carte conteneurs : seulement si /api/containers a répondu.
+        if !containers.is_empty() {
+            ui.add_space(12.0);
+            containers_card(ui, &containers);
+        }
+    });
+}
+
+fn containers_card(ui: &mut egui::Ui, containers: &[aegis_core::Container]) {
+    let up = containers.iter().filter(|c| c.up()).count();
+    let title = format!("Containers · {up}/{} up", containers.len());
+    kit::card_titled(ui, &title, |ui| {
+        for (i, c) in containers.iter().take(40).enumerate() {
+            if i > 0 {
+                kit::hairline(ui);
+            }
+            ui.horizontal(|ui| {
+                kit::led(ui, if c.up() { GREEN } else { RED });
+                ui.label(egui::RichText::new(&c.name).color(TEXT));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(kit::mono(&c.status, DIM));
+                });
+            });
+        }
+        if containers.len() > 40 {
+            kit::dim(ui, &format!("+{} more", containers.len() - 40));
+        }
+    });
 }
 
 fn fmt_speed(bytes_per_s: u64) -> String {

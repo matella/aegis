@@ -3,7 +3,7 @@
 pub mod http;
 pub mod parse;
 
-use aegis_core::{GpuState, NowPlaying, Torrents};
+use aegis_core::{Container, GpuState, NowPlaying, Torrents};
 use async_trait::async_trait;
 
 /// Sonde de santé d'un service → latence en ms (Err = down).
@@ -29,6 +29,12 @@ pub trait MusicClient: Send + Sync {
 #[async_trait]
 pub trait TorrentsClient: Send + Sync {
     async fn torrents(&self) -> Result<Torrents, String>;
+}
+
+/// Conteneurs Docker du homelab (gateway Jarvis `/api/containers`).
+#[async_trait]
+pub trait ContainersClient: Send + Sync {
+    async fn containers(&self) -> Result<Vec<Container>, String>;
 }
 
 // ── Mocks (pour les tests de la logique dashboard/poller, sans réseau) ──────────────────────────

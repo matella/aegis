@@ -5,5 +5,6 @@ pub mod model;
 
 pub use config::{Config, ConfigFile};
 pub use model::{
-    GpuState, NowPlaying, ResidentModel, ServiceHealth, ServiceStatus, TorrentItem, Torrents,
+    Container, GpuState, NowPlaying, ResidentModel, ServiceHealth, ServiceStatus, TorrentItem,
+    Torrents,
 };

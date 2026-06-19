@@ -1,8 +1,8 @@
 //! Impls reqwest des traits clients (le seul code réseau). Pas de test unitaire (réseau) — couvert
 //! par la checklist de run manuel ; la logique (chemins, mapping d'erreurs) reste triviale.
-use crate::parse::{parse_gpu, parse_now_playing, parse_torrents};
-use crate::{GpuClient, HealthClient, MusicClient, TorrentsClient};
-use aegis_core::{Config, GpuState, NowPlaying, Torrents};
+use crate::parse::{parse_containers, parse_gpu, parse_now_playing, parse_torrents};
+use crate::{ContainersClient, GpuClient, HealthClient, MusicClient, TorrentsClient};
+use aegis_core::{Config, Container, GpuState, NowPlaying, Torrents};
 use async_trait::async_trait;
 use std::time::{Duration, Instant};
 
@@ -100,5 +100,21 @@ impl TorrentsClient for HttpClients {
         }
         let body = res.text().await.map_err(|e| e.to_string())?;
         parse_torrents(&body)
+    }
+}
+
+#[async_trait]
+impl ContainersClient for HttpClients {
+    async fn containers(&self) -> Result<Vec<Container>, String> {
+        let mut req = self.http.get(format!("{}/api/containers", self.jarvis_url));
+        if let Some(tok) = &self.jarvis_token {
+            req = req.bearer_auth(tok);
+        }
+        let res = req.send().await.map_err(|e| e.to_string())?;
+        if !res.status().is_success() {
+            return Err(format!("HTTP {}", res.status().as_u16()));
+        }
+        let body = res.text().await.map_err(|e| e.to_string())?;
+        parse_containers(&body)
     }
 }

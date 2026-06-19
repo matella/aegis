@@ -76,6 +76,20 @@ impl GpuState {
     }
 }
 
+/// Un conteneur Docker du homelab (gateway Jarvis `/api/containers`, dérivé de `docker ps`).
+#[derive(Debug, Clone)]
+pub struct Container {
+    pub name: String,
+    pub state: String,  // "running" | "exited" | "paused" | …
+    pub status: String, // "Up 3 days" | "Exited (0) 2 hours ago" | …
+}
+
+impl Container {
+    pub fn up(&self) -> bool {
+        self.state.eq_ignore_ascii_case("running")
+    }
+}
+
 /// Un torrent actif (sous-ensemble du snapshot qBittorrent du gateway Jarvis `/api/torrents`).
 #[derive(Debug, Clone)]
 pub struct TorrentItem {

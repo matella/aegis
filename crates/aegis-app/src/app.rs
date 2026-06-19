@@ -1,6 +1,6 @@
 //! AegisApp : état partagé + boucle egui. Logique métier dans aegis-core/client ; ici, du câblage.
 use crate::{audio, chat, poll, theme, tray, views, window};
-use aegis_core::{Config, GpuState, NowPlaying, ServiceHealth, Torrents};
+use aegis_core::{Config, Container, GpuState, NowPlaying, ServiceHealth, Torrents};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -13,6 +13,8 @@ pub struct DashboardData {
     pub now: NowPlaying,
     /// Snapshot torrents (None = endpoint indisponible / qBittorrent non configuré → carte masquée).
     pub torrents: Option<Torrents>,
+    /// Conteneurs Docker (vide = endpoint /api/containers absent → carte masquée).
+    pub containers: Vec<Container>,
 }
 
 #[derive(PartialEq, Clone, Copy)]
