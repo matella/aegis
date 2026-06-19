@@ -180,6 +180,13 @@ fn opt(s: &str) -> Option<String> {
     (!t.is_empty()).then(|| t.to_string())
 }
 
+/// Extrait l'hôte (sans schéma ni port) d'une URL — pour l'étiquette « box · <host> » de la sidebar.
+fn box_host(url: &str) -> Option<String> {
+    let after = url.split("://").nth(1).unwrap_or(url);
+    let host = after.split(['/', ':']).next().unwrap_or("").trim();
+    (!host.is_empty()).then(|| host.to_string())
+}
+
 /// Démarre le check de connectivité + un watcher par dossier + un scan initial. Renvoie les handles
 /// (à garder vivants). Mirroir de client-rs/main.rs.
 fn boot_uploader(
@@ -252,11 +259,14 @@ impl eframe::App for AegisApp {
             .show(ctx, |ui| {
                 ui.spacing_mut().item_spacing.y = 3.0;
 
-                // Marque.
+                // Marque + box (hôte dérivé de l'URL storm-codex), façon « box · IP » du mockup.
                 ui.horizontal(|ui| {
                     ui.add_space(1.0);
                     ui.label(egui::RichText::new("Aegis").size(16.0).strong().color(theme::ACCENT));
                 });
+                if let Some(host) = box_host(&self.cfg.lock().unwrap().storm_codex_url) {
+                    ui.label(egui::RichText::new(format!("box · {host}")).size(10.0).color(theme::DIM).monospace());
+                }
                 ui.add_space(10.0);
                 crate::kit::hairline(ui);
                 ui.add_space(8.0);

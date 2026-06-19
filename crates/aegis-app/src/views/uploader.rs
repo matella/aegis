@@ -15,7 +15,7 @@ pub fn ui(app: &mut AegisApp, ui: &mut egui::Ui) {
             s.recent_uploads
                 .iter()
                 .take(12)
-                .map(|e| (e.filename.clone(), format!("{:?}", e.status)))
+                .map(|e| (e.filename.clone(), format!("{:?}", e.status), e.error.clone()))
                 .collect::<Vec<_>>(),
         )
     };
@@ -99,17 +99,31 @@ pub fn ui(app: &mut AegisApp, ui: &mut egui::Ui) {
         if recent.is_empty() {
             kit::dim(ui, "none yet");
         }
-        for (i, (f, st)) in recent.iter().enumerate() {
+        for (i, (f, st, err)) in recent.iter().enumerate() {
             if i > 0 {
                 kit::hairline(ui);
             }
+            let failed = st.eq_ignore_ascii_case("failed");
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new(f).monospace().color(TEXT).size(11.0));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let ok = st.eq_ignore_ascii_case("uploaded") || st.eq_ignore_ascii_case("ok");
-                    kit::badge(ui, &st.to_lowercase(), if ok { GREEN } else { DIM });
+                    let ok = st.eq_ignore_ascii_case("success")
+                        || st.eq_ignore_ascii_case("uploaded")
+                        || st.eq_ignore_ascii_case("duplicate");
+                    let color = if ok { GREEN } else if failed { RED } else { DIM };
+                    let badge = kit::badge(ui, &st.to_lowercase(), color);
+                    if let Some(e) = err {
+                        badge.on_hover_text(e); // détail complet de l'erreur au survol
+                    }
                 });
             });
+            // Sous-ligne rouge tronquée : la raison de l'échec (ex. « HTTP 401: unauthorized »).
+            if failed {
+                if let Some(e) = err {
+                    let short: String = e.chars().take(80).collect();
+                    ui.label(egui::RichText::new(short).size(10.0).color(RED)).on_hover_text(e);
+                }
+            }
         }
     });
 }

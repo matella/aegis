@@ -63,11 +63,15 @@ pub fn parse_now_playing(body: &str) -> Result<NowPlaying, String> {
         .and_then(|imgs| {
             imgs.iter().rev().find_map(|im| im.get("url").and_then(Value::as_str)).map(str::to_string)
         });
+    let progress_ms = cur.get("progressMs").and_then(Value::as_u64).map(|n| n as u32);
+    let duration_ms = track.and_then(|t| t.get("durationMs")).and_then(Value::as_u64).map(|n| n as u32);
     Ok(NowPlaying {
         playing: authed && is_playing && title.is_some(),
         title,
         artist,
         cover_url,
+        progress_ms,
+        duration_ms,
     })
 }
 
@@ -93,6 +97,8 @@ mod tests {
         assert_eq!(np.artist.as_deref(), Some("Katy Perry, Snoop Dogg"));
         // Pochette : on retient la plus petite image (dernière du tableau).
         assert_eq!(np.cover_url.as_deref(), Some("https://i.scdn.co/image/small"));
+        assert_eq!(np.progress_ms, Some(1482));
+        assert_eq!(np.duration_ms, Some(235000));
     }
 
     #[test]

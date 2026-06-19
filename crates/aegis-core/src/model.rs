@@ -83,6 +83,9 @@ pub struct NowPlaying {
     pub artist: Option<String>,
     /// URL de la pochette d'album (Spotify `track.album.images`), si disponible.
     pub cover_url: Option<String>,
+    /// Progression de lecture (ms) et durée du titre (ms), pour la barre de progression.
+    pub progress_ms: Option<u32>,
+    pub duration_ms: Option<u32>,
 }
 
 #[cfg(test)]

@@ -6,6 +6,7 @@
     "id": "6KOEK6SeCEZOQkLj5M1PxH",
     "name": "California Gurls",
     "artists": [{ "name": "Katy Perry" }, { "name": "Snoop Dogg" }],
+    "durationMs": 235000,
     "album": {
       "name": "Teenage Dream",
       "images": [

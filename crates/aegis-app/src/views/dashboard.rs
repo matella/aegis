@@ -135,12 +135,26 @@ fn now_playing_card(ui: &mut egui::Ui, now: &aegis_core::NowPlaying) {
                         egui::RichText::new(now.title.clone().unwrap_or_default()).strong().color(TEXT),
                     );
                     ui.label(egui::RichText::new(now.artist.clone().unwrap_or_default()).size(12.0).color(DIM));
+                    if let (Some(pos), Some(dur)) = (now.progress_ms, now.duration_ms) {
+                        if dur > 0 {
+                            ui.add_space(4.0);
+                            ui.label(kit::mono(format!("{} / {}", fmt_ms(pos), fmt_ms(dur)), DIM));
+                            ui.add_space(2.0);
+                            kit::gauge(ui, pos as f32 / dur as f32, ACCENT);
+                        }
+                    }
                 });
             });
         } else {
             kit::dim(ui, "nothing playing");
         }
     });
+}
+
+/// Millisecondes → `m:ss`.
+fn fmt_ms(ms: u32) -> String {
+    let total = ms / 1000;
+    format!("{}:{:02}", total / 60, total % 60)
 }
 
 fn quick_actions_card(ui: &mut egui::Ui, cfg: &aegis_core::Config) {
