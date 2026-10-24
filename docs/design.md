@@ -110,6 +110,45 @@ Chaque sous-projet est livrable, testé, et ne casse pas les précédents.
    - **Actions rapides** : « ouvrir storm-codex », « ouvrir la console Jarvis » (navigateur).
 4. **Uploader intégré** : logique `client-rs` copiée (watch dossier HotS → upload storm-codex,
    backfill, re-scan, dédup) ; vue statut (watching, comptés, récents) + config (serveur/token/dirs).
+5. **Feed live de la partie en cours** (ajouté le 2026-10-24) — alimente la page `/live` de
+   storm-codex. Contrat côté serveur : storm-codex `docs/spec/05-api.md` § « Feed live » et
+   `docs/specs/2026-10-24-feed-live-en-partie-design.md`. Décisions opérateur reprises telles
+   quelles : **parse côté serveur** (Aegis ne pousse que des octets bruts), **une partie à la
+   fois**, morceaux **idempotents par offset**.
+   - **Source** : `%TEMP%\Heroes of the Storm\TempWriteReplayP1\` (surchargeable par la variable
+     d'env `AEGIS_LIVE_DIR`, pour les tests). **Poll toutes les 1 s** (pas `notify` : le dossier
+     n'existe qu'une fois la partie chargée, et le jeu garde les fichiers ouverts). Fichiers ouverts
+     en **lecture partagée** (READ | WRITE | DELETE), taille lue **sur le handle** (le listing du
+     répertoire est périmé pour un fichier ouvert).
+   - **Battlelobby** : adopté quand son contenu est identique sur deux polls (le jeu peut le
+     réécrire au chargement), posté **une fois par contenu** à `POST /api/lobby` (Bearer upload) ;
+     `X-Session` = SHA-256 hex minuscule de ces mêmes octets (seule façon pour le serveur de lier
+     la session au lobby, donc carte + opérateur).
+   - **Streams** `replay.tracker.events` / `replay.game.events` : octets ajoutés depuis l'offset
+     envoyé → `POST /api/live/chunk` (`X-Session`, `X-Stream` = `tracker`|`game`, `X-Offset`), au
+     plus 256 Ko par POST. L'offset avance des **octets envoyés** (pas de `consumed`). `409
+     {expected_offset}` → renvoi depuis là ; si c'est un recul (serveur redémarré), le lobby est
+     re-posté avant. Réseau / 5xx → offset gardé, rattrapage au tick suivant. 4xx (401, 400, 413)
+     → statut `error`, plus rien n'est envoyé pour ce lobby.
+   - **Fin** : `replay.details` + `replay.initData` présents **et** streams stables sur deux polls
+     (flush final terminé) → dernier envoi puis `POST /api/live/end {session}` (`404` = déjà plus
+     courante, traité comme fini). Si `replay.details` existe déjà quand le lobby est vu (partie
+     finie, fichiers résiduels) : **aucune session**, ni lobby posté.
+   - **Partie suivante** : nouveau lobby (hash différent), disparition de `replay.details`, ou
+     stream plus court que l'offset envoyé → remise à zéro. Limite connue : un stream recréé avec
+     **le même** lobby (reconnexion ?) ne peut pas être resynchronisé, le serveur gardant les
+     octets reçus sous ce même id — cas non observé. Hypothèse à vérifier au spike (cycle de vie du
+     dossier, non observé) : la partie suivante arrive dans un dossier neuf, ou du moins après la
+     disparition de `details`/`initData`. Si le jeu réutilisait le dossier en laissant le
+     `replay.details` précédent, la nouvelle partie ne serait jamais streamée ; correctif le cas
+     échéant : tenir `details` pour périmé quand son mtime précède celui du lobby.
+   - **Code** : `aegis-uploader/src/live/` — `LiveWatcher::tick` = machine à états pure derrière
+     les traits `LiveDir` (dossier) et `LiveSink` (serveur), testée avec des fakes (`live/tests.rs`) ;
+     `live/io.rs` = impls réelles (fichiers partagés, ureq, mapping des codes HTTP testé) + thread
+     de poll unique démarré par l'app (indépendant des dossiers de replays). Statut dans
+     `AppState.live` : **idle · streaming · ended · error** (carte « Live game » de la vue
+     Uploader, ambre si serveur injoignable). Vérification sans l'UI :
+     `cargo run -p aegis-uploader --example live_watch -- <url> <token> [dossier]`.
 
 ### Flux de données
 Polling HTTP (+ WS si dispo) depuis une tâche tokio → met à jour l'état partagé → repaint egui.

@@ -72,6 +72,10 @@ pub struct AppState {
     pub bulk_progress: Option<BulkProgress>,
     pub scanning: usize,
 
+    /// Feed live de la partie en cours (storm-codex `/live`) : statut + dossier surveillé.
+    pub live: crate::live::LiveStatus,
+    pub live_dir: String,
+
     /// Callback de repaint (None tant que l'app ne l'a pas branché).
     pub repaint: Option<RepaintFn>,
 }
@@ -95,6 +99,8 @@ impl AppState {
             recent_uploads: VecDeque::new(),
             bulk_progress: None,
             scanning: 0,
+            live: crate::live::LiveStatus::Idle,
+            live_dir: String::new(),
             repaint: None,
         }
     }

@@ -6,7 +6,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 /// Append a line to the log file in the app data directory
-fn log(msg: &str) {
+pub(crate) fn log(msg: &str) {
     let log_path = settings::data_dir().join("client.log");
     use std::io::Write;
     if let Ok(mut f) = std::fs::OpenOptions::new()

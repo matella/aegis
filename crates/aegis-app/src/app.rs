@@ -32,6 +32,9 @@ pub struct AegisApp {
     pub up_state: aegis_uploader::SharedState,
     pub up_tx: aegis_uploader::EventSender,
     pub watchers: Vec<aegis_uploader::watcher::WatcherHandle>,
+    /// Feed live (un seul, indépendant des dossiers de replays : pas relancé par restart_watchers).
+    #[allow(dead_code)] // gardé vivant : drop = arrêt de la boucle
+    pub live: aegis_uploader::live::io::LiveHandle,
     pub panel: Panel,
     pub chat: Arc<Mutex<chat::ChatState>>,
     pub chat_tx: tokio::sync::mpsc::UnboundedSender<chat::Outbound>,
@@ -87,6 +90,11 @@ impl AegisApp {
             while rx.recv().await.is_some() {}
         });
         let watchers = boot_uploader(&rt, &up_state, &tx, &dirs);
+        // Feed live de la partie en cours → storm-codex /live (TempWriteReplayP1, ou AEGIS_LIVE_DIR).
+        let live = aegis_uploader::live::io::start_live_watcher(
+            up_state.clone(),
+            aegis_uploader::live::io::default_live_dir(),
+        );
 
         // Dashboard + poller.
         let cfg_arc = Arc::new(Mutex::new(cfg.clone()));
@@ -114,6 +122,7 @@ impl AegisApp {
             up_state,
             up_tx: tx,
             watchers,
+            live,
             panel: Panel::Dashboard,
             chat,
             chat_tx,

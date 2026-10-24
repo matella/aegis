@@ -1,9 +1,9 @@
 //! Vue Uploader : statut du watcher + dossiers de replays + uploads récents. Wrappe aegis-uploader.
 use crate::app::AegisApp;
 use crate::kit;
-use crate::theme::{DIM, TEXT};
+use crate::theme::{AMBER, DIM, TEXT};
 use crate::views::{GREEN, RED};
-use aegis_uploader::WatcherStatus;
+use aegis_uploader::{LiveStatus, WatcherStatus};
 
 pub fn ui(app: &mut AegisApp, ui: &mut egui::Ui) {
     let (status, count, connected, recent) = {
@@ -42,6 +42,8 @@ pub fn ui(app: &mut AegisApp, ui: &mut egui::Ui) {
         spread(ui, "Uploaded", &count.to_string(), TEXT);
     });
 
+    ui.add_space(12.0);
+    live_card(app, ui);
     ui.add_space(12.0);
 
     kit::card_titled(ui, "Replay folders", |ui| {
@@ -126,6 +128,57 @@ pub fn ui(app: &mut AegisApp, ui: &mut egui::Ui) {
             }
         }
     });
+}
+
+/// Feed live de la partie en cours (storm-codex `/live`) : idle · streaming · ended · error.
+fn live_card(app: &AegisApp, ui: &mut egui::Ui) {
+    let (live, dir) = {
+        let s = app.up_state.lock().unwrap();
+        (s.live.clone(), s.live_dir.clone())
+    };
+    let color = match &live {
+        LiveStatus::Streaming { warning: Some(_), .. } => AMBER,
+        LiveStatus::Streaming { .. } => GREEN,
+        LiveStatus::Error(_) => RED,
+        LiveStatus::Idle | LiveStatus::Ended { .. } => DIM,
+    };
+    kit::card_titled(ui, "Live game", |ui| {
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Status").color(DIM));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                kit::badge(ui, live.label(), color);
+                kit::led(ui, color);
+            });
+        });
+        match &live {
+            LiveStatus::Streaming { session, tracker, game, warning } => {
+                ui.add_space(6.0);
+                spread(ui, "Session", &short(session), TEXT);
+                ui.add_space(6.0);
+                spread(ui, "Sent", &format!("tracker {tracker} · game {game}"), TEXT);
+                if let Some(w) = warning {
+                    let short_w: String = w.chars().take(80).collect();
+                    ui.label(egui::RichText::new(format!("server unreachable, will catch up — {short_w}")).size(10.0).color(AMBER))
+                        .on_hover_text(w);
+                }
+            }
+            LiveStatus::Ended { session } => {
+                ui.add_space(6.0);
+                spread(ui, "Session", &short(session), DIM);
+            }
+            LiveStatus::Error(e) => {
+                let short_e: String = e.chars().take(80).collect();
+                ui.label(egui::RichText::new(short_e).size(10.0).color(RED)).on_hover_text(e);
+            }
+            LiveStatus::Idle => {}
+        }
+        ui.add_space(6.0);
+        spread(ui, "Folder", &dir, DIM);
+    });
+}
+
+fn short(session: &str) -> String {
+    format!("{}…", &session[..session.len().min(12)])
 }
 
 /// Ligne « label sourd à gauche · valeur à droite » (lignes de la carte de stats).
